@@ -32,10 +32,16 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
-
+.env 
 # vercel
 .vercel
 
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# toSelf.txt is a file for personal notes and should not be tracked
+source_books/toSelf.txt 
+
+#standard readme for react projects
+README.md 
