@@ -40,9 +40,9 @@ export async function POST(req: Request) {
 
 
     const embedding = await openaiClient.embeddings.create({
-      model: "text-embed-3-small",
+      model: "text-embedding-3-small",
       input : latestMessage,
-      encoding_format: "float",
+      encoding_format: "float"
     });
 
     try {
@@ -83,8 +83,9 @@ export async function POST(req: Request) {
         QUESTION: ${latestMessage}`
 
     }
+  
 
-    const response = streamText({
+    const response = await streamText({
       model: openai('gpt-4o'),
       messages: [template , ...messages],
      
@@ -92,10 +93,12 @@ export async function POST(req: Request) {
 
 
 
-    return response.toDataStreamResponse();
+    return (response.toDataStreamResponse());
 
   } catch (error) {
     console.error("Error processing request:", error);
     return new Response("Internal Server Error", { status: 500 });
   }
+
+  
 }

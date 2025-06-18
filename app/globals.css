@@ -138,10 +138,10 @@ margin-right:auto;
 .prompt-suggestions-button {
     margin: 8px;
     padding: 8px;
-    font-size: 15px;
+    font-size: 16px;
     border: none;
     color: darkslategray;
     border-radius: 10px;
-    color:aliceblue;
-    box-shadow: beige 0 8px 24px;
+    color:rgb(4, 53, 96);
+    box-shadow: beige 0 2px 8px;
 }
