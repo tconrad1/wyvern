@@ -1,7 +1,7 @@
 import {DataAPIClient } from '@datastax/astra-db-ts';
 import { PuppeteerWebBaseLoader } from '@langchain/community/document_loaders/web/puppeteer';
 import OpenAI from 'openai';
-
+import { Document } from 'langchain/document';
 import {RecursiveCharacterTextSplitter} from 'langchain/text_splitter'; 
 
 import  "dotenv/config";
@@ -54,20 +54,6 @@ const files = file_names.map((file: string) => {
 
 
 
-
-
-
-
-
-// const Five_E_Data = [
-//   'https://roll20.net/compendium/dnd5e/Free%20Basic%20Rules%20%282024%29',
-//   'https://5e.tools/book.html#xdmg',
-//   'https://5e.tools/book.html#xphb',
-//   'https://5e.tools/book.html#vgm',
-//   'https://5e.tools/data/bestiary/bestiary-mm.json'
-  
-// ];
-
 const openAI_dim = 1536; // Dimension for OpenAI embeddings
 type similarity_metric = 'cosine' | 'euclidean' | 'dot_product'; // Similarity metric for vector search
 const client = new DataAPIClient(ASTRA_DB_APPLICATION_TOKEN);
@@ -94,73 +80,75 @@ const createCollection = async (similarity_metric: similarity_metric = "dot_prod
     console.error(`Error creating collection: ${error}`);
   }
 }
+function flattenJson(json: any): string[] {
+  const result: string[] = [];
 
-const loadSampleData = async () => {
-    const collection = await db.collection(ASTRA_DB_COLLECTION);
-  //   for await (const url of Five_E_Data) {
-  //       const content = await scrapePage(url);
-  //       const chunk = await splitter.splitText(content);
-  //       for await (const c of chunk) {
-  //       const embeddings = await openai.embeddings.create({
-  //           model: 'text-embedding-3-small',
-  //           input: chunk,
-  //           encoding_format: 'float'
-  //       });
-      
-  //   const vectors = embeddings.data[0].embedding;
-
-  //   const res = await collection.insertOne ({
-  //       $vector: vectors,
-  //       text: c
-  //   });
-  //       console.log(`Inserted document with result of ${res}`);
-  //   }
-  // }
-  for await (const file of files) {
-    // Read the file content, dealing with Windows path issues
-    const content = JSON.stringify(fs.readFileSync(file, 'utf8'));
-    
-    const chunk = await splitter.splitText(content);
-    for await (const c of chunk) {
-      const embeddings = await openai.embeddings.create({
-        model: 'text-embedding-3-small',
-        input: c,
-        encoding_format: 'float'
-      });
-      
-      const vectors = embeddings.data[0].embedding;
-
-      const res = await collection.insertOne ({
-        $vector: vectors,
-        text: c
-      });
-      console.log(`Inserted document ${file} with result of ${res}`);
+  function recurse(curr: any, path: string[] = []) {
+    if (typeof curr === 'object' && curr !== null) {
+      for (const key in curr) {
+        recurse(curr[key], path.concat(key));
+      }
+    } else {
+      result.push(`${path.join('.')} = ${curr}`);
     }
   }
 
-  
+  recurse(json);
+  return result;
 }
-/*use pupetteer to scrape the page content*/
-// const scrapePage = async (url: string): Promise<string> => {
-//    const loader = new PuppeteerWebBaseLoader(url, {
-//     launchOptions: {
-//         headless: true,
-//         args :['--disable-features=HttpsFirstBalancedModeAutoEnable'],
-        
-        
-//     },
-//     gotoOptions: {
-//         waitUntil: 'domcontentloaded',
-//     },
-//     evaluate : async (page,browser) => {
-//         const result = await page.evaluate(() => document.body.innerText);
-//         await browser.close();
-//         return result;
-//     }
-//     });
-//     /* Scrape the page content and return it, stripping html tags*/
-//     return (await loader.scrape())?.replace(/<[^>]*>/gm, '');
-// }
+
+const BATCH_SIZE = 10; 
+
+const embedChunks = async (chunks: string[]) => {
+  const results = [];
+
+  for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
+    const batch = chunks.slice(i, i + BATCH_SIZE);
+    
+    const embeddings = await Promise.all(
+      batch.map(async (c) => {
+        const res = await openai.embeddings.create({
+          model: 'text-embedding-3-small',
+          input: c,
+          encoding_format: 'float',
+        });
+        return { embedding: res.data[0].embedding, text: c };
+      })
+    );
+
+    results.push(...embeddings);
+  }
+
+  return results;
+};
+
+const loadSampleData = async () => {
+  const collection = await db.collection(ASTRA_DB_COLLECTION);
+
+  for await (const file of files) {
+   const raw = fs.readFileSync(file, 'utf8');
+    const parsed = JSON.parse(raw);
+    const flattened = flattenJson(parsed).join('\n');
+
+
+    const docs = await splitter.splitDocuments([
+      new Document({ pageContent: flattened, metadata: { source: file } }),
+    ]);
+    //possibly switch to all settled with error handling
+    const embeddedChunks = await embedChunks(docs.map((doc) => doc.pageContent));
+
+    await collection.insertMany(
+      embeddedChunks.map((e, i) => ({
+        $vector: e.embedding,
+        text: e.text,
+        metadata: docs[i].metadata, // Optional: store original file info
+      }))
+    );
+
+    console.log(`Inserted ${embeddedChunks.length} chunks from ${file}`);
+  }
+};
+
 
 createCollection().then(() => {
     console.log(`Collection ${ASTRA_DB_COLLECTION} created successfully.`);
