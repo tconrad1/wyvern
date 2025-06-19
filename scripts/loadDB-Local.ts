@@ -3,14 +3,21 @@ import { PuppeteerWebBaseLoader } from '@langchain/community/document_loaders/we
 import OpenAI from 'openai';
 import { Document } from 'langchain/document';
 import {RecursiveCharacterTextSplitter} from 'langchain/text_splitter'; 
-
+import pLimit from "p-limit";
 import  "dotenv/config";
 import { headersArray } from 'puppeteer/src/puppeteer.js';
-const fs = require('fs');
-const path = require('path');
+import fs from 'fs';
+import path from 'path';
+import { encoding_for_model } from "@dqbd/tiktoken";
 
 
 const { ASTRA_DB_NAMESPACE, ASTRA_DB_COLLECTION, ASTRA_DB_API_ENDPOINT, ASTRA_DB_APPLICATION_TOKEN, OPENAI_API_KEY } = process.env;
+
+//p limit for batch embedding ie concurrent api calls to embed
+// can be adjusted for efficiency or to avoid throttling 
+const limit = pLimit(5);
+
+
 
 
 if (!ASTRA_DB_NAMESPACE || !ASTRA_DB_COLLECTION || !ASTRA_DB_API_ENDPOINT || !ASTRA_DB_APPLICATION_TOKEN || !OPENAI_API_KEY) {
@@ -18,12 +25,11 @@ if (!ASTRA_DB_NAMESPACE || !ASTRA_DB_COLLECTION || !ASTRA_DB_API_ENDPOINT || !AS
 }
 
 const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
-import  bestiary_files  from '../source_books/bestiary_index.json'; // Import the bestiary file name json
 /*prepare for local file scraping */
 
 
 function getAllFiles(dirPath: string, arrayOfFiles: any[] ) {
-  let files = fs.readdirSync(dirPath)
+  const files = fs.readdirSync(dirPath)
 
   
 
@@ -80,6 +86,7 @@ const createCollection = async (similarity_metric: similarity_metric = "dot_prod
     console.error(`Error creating collection: ${error}`);
   }
 }
+
 function flattenJson(json: any): string[] {
   const result: string[] = [];
 
@@ -97,30 +104,29 @@ function flattenJson(json: any): string[] {
   return result;
 }
 
-const BATCH_SIZE = 10; 
+
+
 
 const embedChunks = async (chunks: string[]) => {
-  const results = [];
+  const tasks = chunks.map((c) =>
+    limit(async () => {
+      const res = await openai.embeddings.create({
+        model: 'text-embedding-3-small',
+        input: c,
+        encoding_format: 'float',
+      });
+      return { embedding: res.data[0].embedding, text: c };
+    })
+  );
 
-  for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
-    const batch = chunks.slice(i, i + BATCH_SIZE);
-    
-    const embeddings = await Promise.all(
-      batch.map(async (c) => {
-        const res = await openai.embeddings.create({
-          model: 'text-embedding-3-small',
-          input: c,
-          encoding_format: 'float',
-        });
-        return { embedding: res.data[0].embedding, text: c };
-      })
-    );
+  const results = await Promise.allSettled(tasks);
 
-    results.push(...embeddings);
-  }
-
-  return results;
+  // Filter and handle errors
+  return results
+    .filter((r) => r.status === 'fulfilled')
+    .map((r) => (r as PromiseFulfilledResult<{ embedding: number[]; text: string }>).value);
 };
+
 
 const loadSampleData = async () => {
   const collection = await db.collection(ASTRA_DB_COLLECTION);
