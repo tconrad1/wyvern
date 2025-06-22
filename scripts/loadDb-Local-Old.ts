@@ -84,50 +84,10 @@ const filterDocumentsByTokenLimit = (
   return docs.filter((doc) => enc.encode(doc.pageContent).length <= maxTokens);
 };
 
-//second level token limit enforcement in case some chunks are still too large after initial filtering 
-const enforceTokenLimit = async (
-  docs: Document[],
-  maxTokens: number = MAX_TOKENS
-): Promise<Document[]> => {
-  const safeDocs: Document[] = [];
-  const aggressiveSplitter = new RecursiveCharacterTextSplitter({
-    chunkSize: 256, // Smaller chunks for over-limit cases
-    chunkOverlap: 50,
-  });
-
-  for (const doc of docs) {
-    const tokenCount = enc.encode(doc.pageContent).length;
-    //check if the chunk is within the token limit
-    if (tokenCount <= maxTokens) {
-      safeDocs.push(doc);
-    } else {
-      // If the chunk is too large, re-chunk it aggressively
-      console.warn(`⚠️ Document chunk over token limit (${tokenCount} tokens), re-chunking...`);
-    const subDocs = (await aggressiveSplitter.splitDocuments([doc])).map((d, idx) => ({
-      ...d,
-      metadata: {
-        ...doc.metadata,
-        splitFrom: doc.metadata?.source || "unknown",
-        part: idx + 1,
-  }
-}));
-
-
-      // Filter just in case secondary chunks are still too large
-      const subSafe = subDocs.filter(
-        (d) => enc.encode(d.pageContent).length <= maxTokens
-      );
-      safeDocs.push(...subSafe);
-    }
-  }
-
-  return safeDocs;
-};
 
 
 
-// Function to create a collection in Astra DB with vector support, the collection might already exist 
-// and we will instead just use the existing collection
+
 const createCollection = async (similarity_metric: similarity_metric = "dot_product") => {
   try {
     const res = await db.createCollection(ASTRA_DB_COLLECTION, { 
@@ -185,68 +145,50 @@ const embedChunks = async (chunks: string[]) => {
 };
 
 
-
-
-
-
-
 const loadSampleData = async () => {
   const collection = await db.collection(ASTRA_DB_COLLECTION);
 
   for await (const file of files) {
-    try {
-      console.log(`Processing file: ${file}`);
-      
-      const raw = fs.readFileSync(file, 'utf8');
-      const parsed = JSON.parse(raw);
-      const flattened = flattenJson(parsed).join('\n');
+   const raw = fs.readFileSync(file, 'utf8');
+    const parsed = JSON.parse(raw);
+    const flattened = flattenJson(parsed).join('\n');
 
-      const docs = await splitter.splitDocuments([
-        new Document({ pageContent: flattened, metadata: { source: file } }),
-      ]);
 
-      const safeDocs = await enforceTokenLimit(docs);
+    const docs = await splitter.splitDocuments([
+      new Document({ pageContent: flattened, metadata: { source: file } }),
+    ]);
+    //possibly switch to all settled with error handling
+    // const embeddedChunks = await embedChunks(docs.map((doc) => doc.pageContent));
+   const safeDocs = filterDocumentsByTokenLimit(docs);
 
-      if (safeDocs.length < docs.length) {
-        console.warn(`⚠️ Skipped ${docs.length - safeDocs.length} overlong chunks from ${file}`);
-      }
+  if (safeDocs.length < docs.length) {
+    console.warn(`Skipped ${docs.length - safeDocs.length} overlong chunks from file ${file}`);
+  }
 
-      if (safeDocs.length === 0) {
-        console.warn(`⚠️ All chunks from ${file} were over token limit, skipping.`);
-        continue;
-      }
+  if (safeDocs.length < docs.length) {
+    console.warn(`Skipped ${docs.length - safeDocs.length} overlong chunks from file ${file}`);
+  }
 
-      const embeddedChunks = await embedChunks(safeDocs.map((doc) => doc.pageContent));
+  const embeddedChunks = await embedChunks(safeDocs.map((doc) => doc.pageContent));
+  if (embeddedChunks.length === 0) {
+    console.warn(`No valid embeddings for file ${file}`);
+    continue;
+  }
 
-      if (embeddedChunks.length === 0) {
-        console.warn(`⚠️ No valid embeddings generated for ${file}, skipping.`);
-        continue;
-      }
+  await collection.insertMany(
+    embeddedChunks.map((e, i) => ({
+      $vector: e.embedding,
+      text: e.text,
+      metadata: safeDocs[i].metadata, // stored metadata
+    }))
+  );
 
-      try {
-        await collection.insertMany(
-          embeddedChunks.map((e, i) => ({
-            $vector: e.embedding,
-            text: e.text,
-            metadata: safeDocs[i].metadata,
-          }))
-        );
-        console.log(`✅ Inserted ${embeddedChunks.length} chunks from ${file}`);
-      } catch (insertErr) {
-        console.error(`❌ Failed to insert embeddings for ${file}:`, insertErr);
-      }
-    } catch (err) {
-      console.error(`❌ Failed processing file ${file}:`, err);
-      continue; // continue to next file no matter what
-    }
+    console.log(`Inserted ${embeddedChunks.length} chunks from ${file}`);
   }
 };
 
-createCollection()
-  .then(() => {
+
+createCollection().then(() => {
     console.log(`Collection ${ASTRA_DB_COLLECTION} created successfully.`);
-    return loadSampleData();
-  })
-  .catch((err) => {
-    console.error("💀 Top-level error caught:", err);
-  });
+    loadSampleData();
+});

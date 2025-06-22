@@ -45,3 +45,5 @@ source_books/toSelf.txt
 
 #standard readme for react projects
 README.md 
+
+loadDb-Local-Old.ts # This file is used to load the local database through a less robust method and should not be tracked
