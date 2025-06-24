@@ -1,34 +1,61 @@
-import { streamText } from "ai";
+import { LanguageModel, streamText } from "ai";
 import { openai } from "@ai-sdk/openai";
 import OpenAI from "openai";
 import { DataAPIClient } from "@datastax/astra-db-ts";
+import {PlayerObject, MonsterObject} from "../../../scripts/dataTypes";
+import { getModelInfo } from "./modelRouter";
 
-const {
-  ASTRA_DB_NAMESPACE,
-  ASTRA_DB_COLLECTION,
-  ASTRA_DB_API_ENDPOINT,
-  ASTRA_DB_APPLICATION_TOKEN,
-  OPENAI_API_KEY
-} = process.env;
+const openaiEmbedClient = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
 
-const openaiClient = new OpenAI({ apiKey: OPENAI_API_KEY });
 
-const client = new DataAPIClient(ASTRA_DB_APPLICATION_TOKEN);
-const db = client.db(
-  ASTRA_DB_API_ENDPOINT || "default_endpoint",
-  { namespace: ASTRA_DB_NAMESPACE }
+
+let namespace : string ;
+let collection : string;
+let endpoint : string;
+let token : string;
+let model : LanguageModel;
+
+try {
+  const modelInfo = getModelInfo(process.argv[2]);
+  namespace = modelInfo.namespace;
+  collection = modelInfo.collection;
+  endpoint = modelInfo.endpoint;
+  token = modelInfo.token;
+  model = modelInfo.model;
+
+}
+   catch (error: unknown) {
+  console.error("❌ Failed to initialize model info.");
+  if (error instanceof Error) {
+    console.error(error.message);
+  } else {
+    console.error("An unknown error occurred:", error);
+  }
+  throw new Error("Startup failed: model info not available");
+}
+
+const dbClient = new DataAPIClient(token);
+const db = dbClient.db(  endpoint || "default_endpoint",
+  { namespace: namespace }
 );
 
 const curr_limit_for_find = 10;
 
+
+
+
+
+
+
+
 // 🔍 Basic schema validators
-function isValidPlayer(player: any): boolean {
-  return player &&
+function isValidPlayer(player: PlayerObject ): boolean {
+  return player  &&
     typeof player === 'object' &&
     typeof player.hp === 'number';
 }
 
-function isValidMonster(monster: any): boolean {
+function isValidMonster(monster: MonsterObject): boolean {
   return monster &&
     typeof monster === 'object' &&
     typeof monster.hp === 'number' &&
@@ -43,7 +70,7 @@ export async function POST(req: Request) {
     let docContext = "";
 
     // === 1. Embed message for RAG ===
-    const embedding = await openaiClient.embeddings.create({
+    const embedding = await openaiEmbedClient.embeddings.create({
       model: "text-embedding-3-small",
       input: latestMessage,
       encoding_format: "float"
@@ -51,8 +78,8 @@ export async function POST(req: Request) {
 
     // === 2. Retrieve context from vector database ===
     try {
-      const collection = await db.collection(ASTRA_DB_COLLECTION || "default_collection");
-      const cursor = collection.find({}, {
+      const dbCollection = await db.collection(collection || "default_collection");
+      const cursor = dbCollection.find({}, {
         sort: { $vector: embedding.data[0].embedding },
         limit: curr_limit_for_find
       });
@@ -112,12 +139,16 @@ If there are no changes, return an empty JSON object in the same format. Do not 
 Always include all relevant keys: \`players\`, \`monsters\`, and \`campaignLog\`.
 
 Do not create characters unless explicitly asked to do so. Be brief unless otherwise instructed.
+
+Current game state : ${gameState}
+
+potentialy relevant context from the database : ${docContext}
 `;
 
 
     // === 5. Stream and buffer the AI response ===
     const streamResponse = await streamText({
-      model: openai('gpt-4o'),
+      model: model,
       messages: [systemPrompt, ...messages],
     });
 

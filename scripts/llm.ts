@@ -1,15 +1,32 @@
 // llm.ts
-import OpenAI from "openai";
+import { ChatCompletionMessageParam } from 'openai/resources/chat';
 
-const { LLM_PROVIDER, OPENAI_API_KEY, GROQ_API_KEY } = process.env;
+export async function callOpenRouterModel(
+  model: string,
+  messages: ChatCompletionMessageParam[],
+): Promise<string> {
+  const apiKey = process.env.OPENROUTER_API_KEY!;
+  const url = 'https://openrouter.ai/api/v1/chat/completions';
 
-if (!LLM_PROVIDER || !["openai", "groq"].includes(LLM_PROVIDER)) {
-  throw new Error("LLM_PROVIDER must be set to 'openai' or 'groq'");
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+      'HTTP-Referer': 'http://localhost', // Change to your domain if deployed
+      'X-Title': 'AI-DM-Tool',
+    },
+    body: JSON.stringify({
+      model,
+      messages,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`OpenRouter API error: ${errorText}`);
+  }
+
+  const data = await response.json();
+  return data.choices[0].message.content;
 }
-
-const isGroq = LLM_PROVIDER === "groq";
-
-export const llmClient = new OpenAI({
-  apiKey: isGroq ? GROQ_API_KEY : OPENAI_API_KEY,
-  baseURL: isGroq ? "https://api.groq.com/openai/v1" : undefined,
-});
