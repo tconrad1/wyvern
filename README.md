@@ -1,6 +1,6 @@
 # 🐉 Wyvern DM — AI Dungeon Master for D&D 5e
 
-Wyvern DM is a Next.js-based web app that serves as an AI-powered Dungeon Master for 5th Edition Dungeons & Dragons. It supports multiple LLM providers (OpenAI, Mistral, Groq) and integrates retrieval-augmented generation (RAG) using a local self-hosted Weaviate vector database (currently in the process of implementing this, as I move away from datastax hosting).
+Wyvern DM is a Next.js-based web app that serves as an AI-powered Storyteller based on your favorite TTRPGS. It supports multiple LLM providers (OpenAI, Mistral, Groq) and integrates retrieval-augmented generation (RAG) using a local self-hosted Weaviate vector database (currently in the process of implementing this, as I move away from datastax hosting).
 
 ---
 
