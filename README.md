@@ -1,36 +1,56 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 🐉 Wyvern DM — AI Dungeon Master for D&D 5e
 
-## Getting Started
+Wyvern DM is a Next.js-based web app that serves as an AI-powered Storyteller based on your favorite TTRPGS. It supports multiple LLM providers (OpenAI, Mistral, Groq) and integrates retrieval-augmented generation (RAG) using a local self-hosted Weaviate vector database (currently in the process of implementing this, as I move away from datastax hosting).
 
-First, run the development server:
+---
+
+## ✨ Features
+
+- 🧠 **Multi-model support**: Choose between OpenAI, Mistral, and Groq via config.
+- 🗺️ **Contextual reasoning**: Uses embedded rules and context for smarter, lore-aware responses.
+- 🧩 **Dynamic game state updates**: Extracts and applies JSON-based player/monster updates from AI responses.
+- 🧠 **OpenAI Embeddings + Weaviate**: Uses OpenAI’s embedding model with Weaviate for vector search.
+- 🎲 **Custom Prompt Suggestions**: Kickstart your journey with built-in prompt ideas.
+- 🧪 **Streaming responses**: Enjoy token-by-token AI responses with real-time feedback.
+
+---
+
+## 📦 Stack
+
+| Layer        | Tech                          |
+|-------------|-------------------------------|
+| UI          | React + Next.js (App Router)  |
+| LLM Backend | OpenAI, Mistral, Groq via SDK |
+| RAG         | OpenAI embeddings + Weaviate  |
+| DB          | Self-hosted Weaviate (Docker) |
+| Deployment  | Local or Vercel               |
+
+---
+
+## 🛠 Setup
+
+### 1. Clone
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+git clone https://github.com/your-username/wyvern-dm.git
+cd wyvern-dm
+npm install
 ```
+## Env 
+create your .env file withh the following info 
+OPENAI_API_KEY=sk-...
+MISTRAL_API_KEY=your-mistral-key
+GROQ_API_KEY=your-groq-key
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+WEAVIATE_HOST=localhost:8080
+WEAVIATE_SCHEME=http 
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## DB 
+Start Weaviate (locally via Docker)
+bash
+Copy
+Edit
+docker-compose up -d
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Run 
+npm run dev
