@@ -45,5 +45,12 @@ source_books/toSelf.txt
 
 #standard readme for react projects
 README.md 
+# This file is used to load the local database through a less robust method and should not be tracked
+loadDb-Local-Old.ts
+docker-compose.yml 
+# This file is an old version of the main page and should not be tracked
+page-old.tsx 
 
-loadDb-Local-Old.ts # This file is used to load the local database through a less robust method and should not be tracked
+# This file contains prompts for the AI and should not be tracked as it may contain sensitive information
+scripts/prompt.ts
+colors.txt

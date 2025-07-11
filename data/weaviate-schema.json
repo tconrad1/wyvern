@@ -1,0 +1,15 @@
+{
+  "classes": [
+    {
+      "class": "Document",
+      "description": "A document with text content",
+      "vectorizer": "text2vec-transformers",
+      "properties": [
+        {
+          "name": "text",
+          "dataType": ["text"]
+        }
+      ]
+    }
+  ]
+}

@@ -1,47 +1,60 @@
-// lib/modelRouter.ts
 import { openai } from '@ai-sdk/openai';
 import { mistral } from '@ai-sdk/mistral';
 import { groq } from '@ai-sdk/groq';
+import { google } from '@ai-sdk/google';
 import { LanguageModel } from 'ai';
 
 type ModelInfo = {
-  namespace: string;
-  collection: string;
-  endpoint: string;
-  token: string;
   model: LanguageModel;
+  mongoUri: string;
+  mongoDb: string;
+  weaviateUrl: string;
+  weaviateApiKey: string;
 };
 
 export function getModelInfo(name: string): ModelInfo {
-  const namespace = process.env.ASTRA_DB_NAMESPACE!;
-  const endpoint = process.env.ASTRA_DB_API_ENDPOINT!;
-  const token = process.env.ASTRA_DB_APPLICATION_TOKEN!;
-  const collection = process.env.ASTRA_DB_COLLECTION || "default_collection";
+  const mongoUri = process.env.MONGODB_URI!;
+  const mongoDb = process.env.MONGODB_DB || "default_db";
+  const weaviateUrl = process.env.WEAVIATE_URL!;
+  const weaviateApiKey = process.env.WEAVIATE_API_KEY!;
+
   switch (name) {
+    case 'gemini':
+      return {
+        model: google("models/gemini-2.5-flash"),
+        mongoUri,
+        mongoDb,
+        weaviateUrl,
+        weaviateApiKey,
+      };
+
     case 'openai':
       return {
-        namespace,
-        collection: collection,
-        endpoint,
-        token,
-        model: openai(process.env.OPENAI_API_KEY!)
+        model: openai('gpt-3.5-turbo'),
+        mongoUri,
+        mongoDb,
+        weaviateUrl,
+        weaviateApiKey,
       };
+
     case 'mistral':
       return {
-        namespace,
-        collection: collection,
-        endpoint,
-        token,
-        model: mistral(process.env.MISTRAL_API_KEY!)
+        model: mistral('mistral-small'),
+        mongoUri,
+        mongoDb,
+        weaviateUrl,
+        weaviateApiKey,
       };
+
     case 'groq':
       return {
-        namespace,
-        collection: collection,
-        endpoint,
-        token,
-        model: groq(process.env.GROQ_API_KEY!)
+        model: groq('llama3-70b-8192'),
+        mongoUri,
+        mongoDb,
+        weaviateUrl,
+        weaviateApiKey,
       };
+
     default:
       throw new Error(`Unsupported model provider: ${name}`);
   }

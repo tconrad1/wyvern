@@ -1,147 +1,210 @@
-*{
-    font-family: Verdana, Geneva, Tahoma, sans-serif;
+/* === Global Font === */
+@import url('https://fonts.googleapis.com/css2?family=MedievalSharp&family=Crimson+Pro:wght@400;700&display=swap');
+
+* {
+    font-family: 'Crimson Pro', Georgia, serif; /* readable medieval serif */
+    box-sizing: border-box;
 }
 
+/* === Page Layout === */
 body {
     margin: 0;
-    padding: 0; 
+    padding: 0;
     display: flex;
     justify-content: center;
     align-items: center;
     height: 100vh;
-    background-image: url("assets/background.jpg");
+    background-image: url("assets/parchment.jpg"); /* Use a parchment-style texture */
+    background-size: cover;
+    background-attachment: fixed;
+    background-position: center;
 }
 
-
-main{
-    width: 80vw ;
-    height:  80vh ;
-    background-color:  linear-gradient(to bottom, paleturquoise, cyan);
+/* === Main Container === */
+main {
+    width: 80vw;
+    height: 80vh;
+    background: rgba(255, 248, 220, 0.85); /* parchment tone with semi-transparency */
+    border: 2px solid #5c4033; /* dark brown frame */
     border-radius: 15px;
+    box-shadow: 0 0 20px rgba(92, 64, 51, 0.5);
     display: flex;
     align-items: center;
     flex-direction: column;
     justify-content: space-between;
-
-    padding: 15px;
+    padding: 20px;
+    color: #3b2f2f; /* dark parchment ink */
     text-align: center;
-    color: darkslategrey;
 }
 
-
-section{
+/* === Scrollable Section === */
+section {
     width: 100%;
 }
+#campaign-info {
+    flex: 1; /* Take up remaining vertical space between header and form */
+    overflow-y: auto;
+    margin-top: 1rem;
+    margin-bottom: 1rem;
+   min-height: calc(60vh - 200px); /* Ensure it doesn't collapse when empty */
+    width: 95%;
+}
 
-section.populated{
-    height: 100%;
+section.populated {
     display: flex;
     flex-direction: column;
     justify-content: flex-end;
-    overflow: scroll;
+    padding-right: 10px;
+}
+/* === Fancy Medieval Scrollbar for WebKit Browsers === */
+#campaign-info::-webkit-scrollbar {
+  width: 12px;
 }
 
-form{
-    box-sizing: content-box;
+#campaign-info::-webkit-scrollbar-track {
+  background: #e9ddc7; /* parchment-style background */
+  border-left: 1px solid #5c4033;
+}
+
+#campaign-info::-webkit-scrollbar-thumb {
+  background: linear-gradient(135deg, #8a623a, #5c4033); /* wood-grain look */
+  border-radius: 6px;
+  border: 2px solid #c2a774;
+}
+
+#campaign-info::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(135deg, #a17c4e, #704830);
+}
+
+/* Firefox */
+#campaign-info {
+  scrollbar-width: thin;
+  scrollbar-color: #8a623a #e9ddc7;
+}
+
+/* === Form & Inputs === */
+form {
     display: flex;
-    border-top: darkslategray solid 2px;
+    border-top: 2px solid #5c4033;
     padding-top: 20px;
     border-radius: 0 0 10px 10px;
-    overflow:hidden;
-
+    gap: 10px;
 }
 
-input.question-box{
-    field-sizing: content;
-    min-width: 15vw; 
-    
+input.question-box {
+    min-width: 15vw;
     padding: 10px;
-    font-size: 15px;
-    color: darkslategray;
-    /* border:none; */
-
+    font-size: 16px;
+    border: 2px solid #a17c4e;
+    border-radius: 8px;
+    background-color: #f9f5e3;
+    color: #3b2f2f;
 }
 
-input[type=submit]{
+input[type="submit"] {
     min-width: 5vw;
     padding: 10px;
-    font-size: 15px;
-    
-    color: whitesmoke;
-    background-color: rgb(246, 246, 246);
-    /* border:none; */
+    font-size: 16px;
+    background-color: #a17c4e;
+    color: #fff8e1;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.3s;
+}
 
+input[type="submit"]:hover {
+    background-color: #8a623a;
 }
 
 input:focus {
-    outline:none;
+    outline: 2px solid #5c4033;
 }
 
-
-
+/* === Loader (keep minimal style changes) === */
 .loader {
     margin: 10px;
-    width: 60px; 
+    width: 60px;
     aspect-ratio: 4;
-    background: no-repeat radial-gradient(circle closest-side, slate-gray, 90%, black) 0  50%,
-    no-repeat radial-gradient(circle closest-side, slate-gray, 90%, black) 50%  50%,
-    no-repeat radial-gradient(circle closest-side, slate-gray, 90%, black) 10%0  50%;
-
+    background: no-repeat radial-gradient(circle closest-side, slategray, 90%, black) 0 50%,
+                no-repeat radial-gradient(circle closest-side, slategray, 90%, black) 50% 50%,
+                no-repeat radial-gradient(circle closest-side, slategray, 90%, black) 100% 50%;
     background-size: calc(100%/3) 100%;
-
     animation: loading 1s infinite linear;
-
-
 }
 
-
-@keyframes loading{
-    33% {background-size: calc(100%/3) 0%,calc(100%/3) 100%, calc(100%/3) 100%;} 
-    50% {background-size: calc(100%/3) 100%,calc(100%/3) 0%, calc(100%/3) 100%; }
-    66% {background-size: calc(100%/3) 100%, calc(100%/3) 0%, calc(100%/3) 0;  }       
-    
+@keyframes loading {
+    33% { background-size: calc(100%/3) 0%, calc(100%/3) 100%, calc(100%/3) 100%; }
+    50% { background-size: calc(100%/3) 100%, calc(100%/3) 0%, calc(100%/3) 100%; }
+    66% { background-size: calc(100%/3) 100%, calc(100%/3) 0%, calc(100%/3) 0; }
 }
 
-
-
-
-.bubble{
-    margin: 8px; 
-    padding: 8px; 
-    font-size: 15px;
-    border: none; 
-    color: darkslategray;
-    box-shadow: beige 0 8px 24px;
+/* === Chat Bubbles === */
+.bubble {
+    margin: 8px;
+    padding: 12px;
+    font-size: 16px;
+    border: 1px solid #5c4033;
+    border-radius: 12px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.2);
     width: 80%;
     text-align: left;
-    
+    background-color: #fdf8e3;
+    color: #3b2f2f;
 }
 
 .bubble.user {
-  border-radius: 20px 20px  0 20px;
-    background-color: lightcyan;
-margin-left:auto;}
-
+    border-radius: 20px 20px 0 20px;
+    background-color: #e0d8b0;
+    margin-left: auto;
+}
 
 .bubble.assistant {
-  border-radius: 20px 20px 20px 0;
-    background-color: lightgoldenrodyellow;
-margin-right:auto;
+    border-radius: 20px 20px 20px 0;
+    background-color: #f2eac1;
+    margin-right: auto;
 }
 
+/* === Prompt Buttons === */
 .prompt-suggestions {
     width: 100%;
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    justify-content: center;
 }
-
-
 
 .prompt-suggestions-button {
     margin: 8px;
-    padding: 8px;
+    padding: 8px 12px;
     font-size: 16px;
     border: none;
-    color: darkslategray;
     border-radius: 10px;
-    color:rgb(4, 53, 96);
-    box-shadow: beige 0 2px 8px;
+    background-color: #c2a774;
+    color: #fffdf5;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+    cursor: pointer;
+    transition: background 0.3s ease;
+}
+
+.prompt-suggestions-button:hover {
+    background-color: #a88b5b;
+}
+
+.campaign-panel {
+  background: url('assets/parchment.jpg');
+  border: 2px solid saddlebrown;
+  border-radius: 12px;
+  padding: 1rem;
+  font-family: "IM Fell English", serif;
+  color: #2e2e2e;
+  max-width: 400px;
+  margin: auto;
+}
+
+.message-content{
+      height: 200px;
+      overflow-y: scroll; 
+      border: 1px solid #ccc; 
+      padding: 10px;
 }

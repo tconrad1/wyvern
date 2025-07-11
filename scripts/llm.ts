@@ -1,5 +1,5 @@
 // llm.ts
-import { ChatCompletionMessageParam } from 'openai/resources/chat';
+import { ChatCompletionMessageParam  } from 'openai/resources/chat/completions';
 
 export async function callOpenRouterModel(
   model: string,
