@@ -1,42 +1,53 @@
-import { streamText, streamObject, zodSchema, tool } from "ai";
-import { MongoClient, ObjectId } from "mongodb";
+import { streamText, tool } from "ai";
+import { zodToJsonSchema } from "zod-to-json-schema";
+import { MongoClient, ObjectId, Db, Filter } from "mongodb";
 import { NextRequest } from "next/server";
+import z from "zod";
+
 import { getModelInfo } from "./modelRouter";
+import { getDB } from "./mongo";
+import { getWeaviateSingleton } from "./weaviateSingleton";
+import { convertToolsToGemini } from "./toolCallingUtility";
 import { prompts } from "../../../scripts/prompt";
 import { PlayerObject, MonsterObject } from "../../../scripts/dataTypes";
-import weaviate from "weaviate-ts-client";
-import z, { object } from "zod";
-
+import { GoogleGenerativeAI, FunctionDeclaration, Content } from '@google/generative-ai';
+//fix gameState issue 
+// === Schemas ===
 const classSchema = z.object({
   className: z.string(),
   subclassName: z.string().optional(),
   level: z.number().optional(),
   primaryClass: z.boolean().optional(),
 });
+// interface GameState {
+//   players: Record<string, PlayerObject>;
+//   monsters: Record<string, MonsterObject>;
+// }
 const playerSchema = z.object({
-      hp: z.number(),
-      name: z.string(),
-      status: z.string().optional(),
-      class: z.array(classSchema).optional(),
-      level: z.number().optional(),
-      species: z.string().optional(),
-      spells: z.array(z.string()).optional(),
-      inventory: z.array(z.string()).optional(),
-      spellSlots: z.object({
-        level1: z.number().optional(),
-        level2: z.number().optional(),
-        level3: z.number().optional(),
-        level4: z.number().optional(),
-        level5: z.number().optional(),
-        level6: z.number().optional(),
-        level7: z.number().optional(),
-        level8: z.number().optional(),
-        level9: z.number().optional(),
-      }).optional(),
-      background: z.string().optional(),
-      alignment: z.string().optional(),
-      feats: z.array(z.string()).optional(),
-    })
+  hp: z.number(),
+  name: z.string(),
+  status: z.string().optional(),
+  class: z.array(classSchema).optional(),
+  level: z.number().optional(),
+  species: z.string().optional(),
+  spells: z.array(z.string()).optional(),
+  inventory: z.array(z.string()).optional(),
+  spellSlots: z.object({
+    level1: z.number().optional(),
+    level2: z.number().optional(),
+    level3: z.number().optional(),
+    level4: z.number().optional(),
+    level5: z.number().optional(),
+    level6: z.number().optional(),
+    level7: z.number().optional(),
+    level8: z.number().optional(),
+    level9: z.number().optional(),
+  }).optional(),
+  background: z.string().optional(),
+  alignment: z.string().optional(),
+  feats: z.array(z.string()).optional(),
+});
+
 const monsterSchema = z.object({
   type: z.string(),
   hp: z.number(),
@@ -44,38 +55,11 @@ const monsterSchema = z.object({
   class: classSchema.optional(),
 });
 
-const myZodSchema = z.object({
-  players: z.record(
-    playerSchema
-  ),
-  monsters: z.record(
-    z.object({
-      type: z.string(),
-      hp: z.number(),
-      status: z.string().optional(),
-      class: classSchema.optional(),
-    })
-  ),
-  campaignLog: z.array(z.string())
-
-});
-
-
-
-const mongoClient = new MongoClient(process.env.MONGODB_URI!);
-const weaviateClient = weaviate.client({ scheme: "http", host: "localhost:8080" });
-
-function cleanChunk(chunk: string): string {
-  return chunk
-    .replace(/\\n/g, "\n")            // convert \n to real line breaks
-    .replace(/\\\//g, "/")            // allow escaped slashes
-    .replace(/(?<!\\)\//g, "")        // remove raw slashes
-    .replace(/```(?:json)?/g, "")     // strip ``` and ```json
-    .replace(/[^\x09\x0A\x0D\x20-\x7E]/g, ""); // strip bad chars
-}
-
-function getIdFilter(id: string): { _id: ObjectId | string } {
-  return ObjectId.isValid(id) ? { _id: new ObjectId(id) } : { _id: id };
+// Utility to build MongoDB _id filter correctly
+function getIdFilter(id: string | ObjectId): Filter<Document> {
+  if (typeof id === "string" && ObjectId.isValid(id)) return { _id: new ObjectId(id) };
+  if (id instanceof ObjectId) return { _id: id };
+  return { _id: id as any }; // for custom string IDs
 }
 
 function isValidPlayer(player: PlayerObject): boolean {
@@ -86,39 +70,42 @@ function isValidMonster(monster: MonsterObject): boolean {
   return monster && typeof monster.hp === "number" && typeof monster.type === "string";
 }
 
+// Main handler
 export async function POST(req: NextRequest) {
+  let mongoClient: MongoClient | undefined;
+
   try {
+    const { mongoClient: client, db } = await getDB();
+    mongoClient = client;
+
+    const weaviate = await getWeaviateSingleton();
+
     const { campaignId, messages, model: modelName } = await req.json();
-    if (!modelName) return new Response("Model not specified", { status: 400 });
-    if (!campaignId) {
-      return new Response("Campaign ID is required", { status: 400 });
-    }
+    if (!modelName || !campaignId)
+      return new Response("Missing model or campaignId", { status: 400 });
 
-    const { model } = getModelInfo(modelName);
-    await mongoClient.connect();
-    const db = mongoClient.db("wyvern_ai");
+    const { model, provider } = getModelInfo(modelName);
+    const isGemini = provider === "gemini";
 
-    const latestMessage = messages[messages.length - 1]?.content;
+    const latestMessage = messages[messages.length - 1]?.content ?? "";
     let docContext = "";
 
     try {
-      const results = await weaviateClient.graphql.get()
-        .withClassName("RuleContext")
-        .withFields("text _additional { certainty }")
-        .withNearText({ concepts: [latestMessage] })
-        .withLimit(10)
-        .do();
-      const texts = results.data.Get.RuleContext?.map((r: any) => r.text) || [];
-      docContext = JSON.stringify(texts);
+      const result = await weaviate.collections
+        .get("RuleContext")
+        .query.nearText([latestMessage], { limit: 10, returnMetadata: ["certainty"] });
+
+      docContext = JSON.stringify(result.objects.map(obj => obj.properties?.text).filter(Boolean));
     } catch (err) {
-      console.error("Weaviate search failed:", err);
+      console.error("Weaviate query failed:", err);
     }
 
-    let gameState = { players: {}, monsters: {} } as any;
+    // Load game state from MongoDB
+    let gameState : any = { players: {}, monsters: {} };
     try {
       const [players, monsters] = await Promise.all([
         db.collection("players").find({ campaignId }).toArray(),
-        db.collection("monsters").find({ campaignId }).toArray()
+        db.collection("monsters").find({ campaignId }).toArray(),
       ]);
 
       gameState = {
@@ -126,104 +113,214 @@ export async function POST(req: NextRequest) {
         monsters: Object.fromEntries(monsters.map(m => [m._id.toString(), m])),
       };
     } catch (err) {
-      console.error("Game state load failed:", err);
+      console.warn("Using new empty game state:", err);
+      await Promise.all([
+        db.createCollection("players").catch(() => {}),
+        db.createCollection("monsters").catch(() => {}),
+        db.createCollection("campaign_log").catch(() => {}),
+      ]);
     }
 
     const prompt = prompts(gameState, docContext).dm;
 
-    // --- TOOL CALL HANDLERS ---
+    // Define tool functions
     const tools = {
-      async updatePlayer({ id, data }: { id: string, data: any }) {
-        const playersCol = db.collection<PlayerObject>("players");
+      async updatePlayer({ id, data }) {
+        const col = db.collection("players");
         if (isValidPlayer(data)) {
-          await playersCol.updateOne(getIdFilter(id), { $set: { ...data, _id: id, campaignId } }, { upsert: true });
-        } else {
-          console.warn(`Invalid player update: ${id}`, data);
+          await col.updateOne(getIdFilter(id), { $set: { ...data, campaignId } }, { upsert: true });
         }
       },
-      async updateMonster({ id, data }: { id: string, data: any }) {
-        const monstersCol = db.collection<MonsterObject>("monsters");
+      async updateMonster({ id, data }) {
+        const col = db.collection("monsters");
         if (isValidMonster(data)) {
-          await monstersCol.updateOne(getIdFilter(id), { $set: { ...data, _id: id, campaignId } }, { upsert: true });
-        } else {
-          console.warn(`Invalid monster update: ${id}`, data);
+          await col.updateOne(getIdFilter(id), { $set: { ...data, campaignId } }, { upsert: true });
         }
       },
-      async logCampaign({ narration, updates }: { narration: string, updates: any }) {
+      async logCampaign({ narration, updates }) {
         await db.collection("campaign_log").insertOne({
           timestamp: new Date(),
           user_message: latestMessage,
           narration,
           updates_applied: updates || null,
         });
-      }
+      },
+      async RollDie({sides, advantage, disadvantage, offset}){
+        let roll;
+        if ((advantage && disadvantage) || !(advantage || disadvantage)) {
+          roll = Math.floor(Math.random() * (sides - 1) + 1) + offset;
+        } else if (advantage) {
+          roll = Math.max(
+            Math.floor(Math.random() * (sides - 1) + 1) + offset,
+            Math.floor(Math.random() * (sides - 1) + 1) + offset
+          );
+        } else {
+          roll = Math.min(
+            Math.floor(Math.random() * (sides - 1) + 1) + offset,
+            Math.floor(Math.random() * (sides - 1) + 1) + offset
+          );
+        }
+        return { result: roll };
+      },
     };
 
-    // --- STREAM OBJECT WITH TOOLS ---
-    const streamResult = streamText({
-      model,
-      messages: [
-        { role: "system", content: prompt },
-        ...messages,
-      ],
-      tools: {
-        updatePlayer: tool({
-          description: "Update a player's information in the campaign",
-          parameters: playerSchema,
-          execute: tools.updatePlayer
-        }),
-        updateMonster: tool({
-          description: "Update a monster's information in the campaign",
-          parameters: monsterSchema,
-          execute: tools.updateMonster
-        }),
-        logCampaign: tool({
-          description: "Update the log of our campaign, with both narration and any updates to the game state",
-          parameters: z.object({
-            narration: z.string(),
-            updates: z.any().optional(),
-          }),
-          execute: tools.logCampaign
-        }),
+    // Tool definitions for OpenAI (no RollDie)
+    const sharedToolDefs = [
+      {
+        name: "updatePlayer",
+        description: "Update player info",
+        parameters: playerSchema,
+        execute: tools.updatePlayer,
       },
-    });
+      {
+        name: "updateMonster",
+        description: "Update monster info",
+        parameters: monsterSchema,
+        execute: tools.updateMonster,
+      },
+      {
+        name: "logCampaign",
+        description: "Log narration and updates",
+        parameters: z.object({
+          narration: z.string(),
+          updates: z.any().optional(),
+        }),
+        execute: tools.logCampaign,
+      }
+    ];
+    // Tool definitions for Gemini (includes RollDie)
+    const geminiToolDefs = [
+      ...sharedToolDefs,
+      {
+        name: "RollDie",
+        description: "Roll a die, number of sides, rolled with advantage, rolled with disadvantage, and offset are paramaters.",
+        parameters : z.object({
+          sides: z.number(),
+          advantage: z.boolean(),
+          disadvantage: z.boolean(),
+          offset: z.number(),
+        }),
+        execute: tools.RollDie,
+      }
+    ];
 
-    // Stream the response to the client
-    const textStream = streamResult.textStream;
-    if (textStream instanceof ReadableStream) {
-      return new Response(textStream, {
+    if (isGemini) {
+      // Gemini tool-calling using @google/generative-ai
+      const apiKey = process.env.GOOGLE_API_KEY || process.env.GOOGLE_API_KEY_GEMINI || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+      if (!apiKey) {
+        throw new Error("Missing GOOGLE_API_KEY for Gemini");
+      }
+      const genAI = new GoogleGenerativeAI(apiKey);
+      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
+      // Convert tools to Gemini function declarations
+      const geminiFunctions: FunctionDeclaration[] = convertToolsToGemini(
+        geminiToolDefs.map(def => {
+          let jsonSchema = zodToJsonSchema(def.parameters);
+          if (
+            def.name === "logCampaign" &&
+            (jsonSchema as any).properties &&
+            (jsonSchema as any).properties.updates &&
+            !(jsonSchema as any).properties.updates.type
+          ) {
+            (jsonSchema as any).properties.updates.type = "object";
+          }
+          return {
+            type: "function",
+            function: {
+              name: def.name,
+              description: def.description,
+              parameters: jsonSchema,
+            },
+          };
+        })
+      );
+      const geminiTools = [{ functionDeclarations: geminiFunctions }];
+
+      // Prepare Gemini content
+      // Gemini does not support 'system' role. Prepend system prompt as first user message.
+      let geminiMessages: Content[] = [
+        { role: "user", parts: [{ text: prompt }] },
+        ...messages.map(m => ({ role: m.role, parts: [{ text: m.content }] }))
+      ];
+
+      // Tool call/response loop
+      let toolCallCount = 0;
+      let response;
+      while (true) {
+        console.log("Gemini messages before generateContent:", JSON.stringify(geminiMessages, null, 2));
+        response = await model.generateContent({
+          contents: geminiMessages,
+          tools: geminiTools,
+        });
+        const functionCalls = response.response.functionCalls?.() || [];
+        console.log("Gemini functionCalls count:", functionCalls.length);
+        if (!functionCalls.length) break;
+        // Prepare functionResponse parts for each tool call
+        const functionResponseParts = [];
+        for (const call of functionCalls) {
+          const toolDef = geminiToolDefs.find(t => t.name === call.name);
+          if (toolDef && toolDef.execute) {
+            const result = await toolDef.execute(call.args);
+            functionResponseParts.push({
+              functionResponse: {
+                name: call.name,
+                response: result,
+              },
+            });
+          }
+        }
+        console.log("Gemini functionResponseParts count:", functionResponseParts.length);
+        // Remove any trailing tool messages (shouldn't be there, but just in case)
+        while (geminiMessages.length && geminiMessages[geminiMessages.length - 1].role === "tool") {
+          geminiMessages.pop();
+        }
+        // After a function call turn, the very next message must be a single tool message
+        // with exactly the right number of functionResponse parts, and nothing else.
+        geminiMessages.push({ role: "tool", parts: functionResponseParts });
+      }
+      // Return the final response text
+      const text = response.response.text();
+      return new Response(JSON.stringify({ text }), {
+        headers: {
+          "Content-Type": "application/json; charset=utf-8",
+          "Cache-Control": "no-cache",
+        },
+      });
+    } else {
+      // OpenAI style: pass tools as object ToolSet
+      const openAIToolObject = Object.fromEntries(
+        sharedToolDefs.map(def => [
+          def.name,
+          tool({
+            description: def.description,
+            parameters: def.parameters,
+            execute: def.execute,
+          }),
+        ])
+      );
+
+      const streamResult = await streamText({
+        model,
+        messages: [
+          { role: "system", content: prompt },
+          ...messages,
+        ],
+        tools: openAIToolObject,
+      });
+
+      return new Response(streamResult.textStream, {
         headers: {
           "Content-Type": "application/json; charset=utf-8",
           "Transfer-Encoding": "chunked",
           "Cache-Control": "no-cache",
         },
       });
-    } else if (textStream && typeof textStream[Symbol.asyncIterator] === "function") {
-      return new Response(
-        new ReadableStream({
-          async pull(controller) {
-            for await (const chunk of textStream as AsyncIterable<Uint8Array | string>) {
-              controller.enqueue(typeof chunk === "string" ? new TextEncoder().encode(chunk) : chunk);
-            }
-            controller.close();
-          }
-        }),
-        {
-          headers: {
-            "Content-Type": "application/json; charset=utf-8",
-            "Transfer-Encoding": "chunked",
-            "Cache-Control": "no-cache",
-          },
-        }
-      );
-    } else {
-      return new Response("Internal Server Error: Invalid textStream", { status: 500 });
     }
-
   } catch (err) {
-    console.error("Fatal error in POST route:", err);
+    console.error("Fatal error in POST:", err);
     return new Response("Internal Server Error", { status: 500 });
   } finally {
-    await mongoClient.close();
+    if (mongoClient) await mongoClient.close();
   }
 }

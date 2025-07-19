@@ -9,6 +9,7 @@ import PromptSuggestions from "./components/PromptSuggestions";
 import { useState } from "react";
 import CampaignManager from "./components/CampaignManager"
 import  InformationPopUp  from "./components/InformationPopUp";
+import Settings from "./components/Settings";
 
 const Home = () => {
   const [input, setInput] = useState("");
@@ -110,6 +111,7 @@ const Home = () => {
      if(!campaignId) {
           return (
             <main>
+              <Settings />
               {Logo("tarot")}
               <h1>Wyvern Storyteller</h1>
               <InformationPopUp message="Welcome to Wyvern Storyteller! Please select or create a campaign to start chatting with your AI Game Master. It is still a work in progress and you may need to let your AI GM know information pertaining to your character. :)" />
@@ -129,7 +131,7 @@ const Home = () => {
 
         
         <main>
-
+          <Settings />
         {Logo("tarot")}
         <h1>Wyvern Storyteller</h1>
         <p className="campaign-name">📜 Current Campaign: <strong>{campaignId ? campaignId : "None" }</strong></p>
@@ -153,8 +155,7 @@ const Home = () => {
             {isLoading && <LoadingBubble />}
           </>
         )}
-      </section>
-      </div>
+     
 
       <form onSubmit={handleSubmit}>
         <input
@@ -167,6 +168,8 @@ const Home = () => {
         
         <input type="submit" />
       </form>
+       </section>
+      </div>
     </main>
   );
 };

@@ -2,195 +2,274 @@
 @import url('https://fonts.googleapis.com/css2?family=MedievalSharp&family=Crimson+Pro:wght@400;700&display=swap');
 
 * {
-    font-family: 'Crimson Pro', Georgia, serif; /* readable medieval serif */
-    box-sizing: border-box;
+  font-family: 'Crimson Pro', Georgia, serif;
+  box-sizing: border-box;
 }
 
-/* === Page Layout === */
+/* === Base Layout === */
 body {
-    margin: 0;
-    padding: 0;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    height: 100vh;
-    background-image: url("assets/parchment.jpg"); /* Use a parchment-style texture */
-    background-size: cover;
-    background-attachment: fixed;
-    background-position: center;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  background-size: cover;
+  background-attachment: fixed;
+  background-position: center;
+  transition: background-image 0.4s ease, background-color 0.4s ease;
 }
 
 /* === Main Container === */
 main {
-    width: 80vw;
-    height: 80vh;
-    background: rgba(255, 248, 220, 0.85); /* parchment tone with semi-transparency */
-    border: 2px solid #5c4033; /* dark brown frame */
-    border-radius: 15px;
-    box-shadow: 0 0 20px rgba(92, 64, 51, 0.5);
-    display: flex;
-    align-items: center;
-    flex-direction: column;
-    justify-content: space-between;
-    padding: 20px;
-    color: #3b2f2f; /* dark parchment ink */
-    text-align: center;
+  width: 85vw;
+  height: 85vh;
+  border-radius: 18px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 24px;
+  text-align: center;
+  transition: all 0.3s ease;
+  border: 2px solid;
+  box-shadow: 0 0 25px rgba(0, 0, 0, 0.4);
+  flex-wrap: wrap;
+  align-items: center;
 }
 
-/* === Scrollable Section === */
-section {
-    width: 100%;
-}
-#campaign-info {
-    flex: 1; /* Take up remaining vertical space between header and form */
-    overflow-y: auto;
-    margin-top: 1rem;
-    margin-bottom: 1rem;
-   min-height: calc(60vh - 200px); /* Ensure it doesn't collapse when empty */
-    width: 95%;
+/* === Light Mode === */
+
+.light body {
+  background-image: url("assets/parchment.jpg");
 }
 
-section.populated {
-    display: flex;
-    flex-direction: column;
-    justify-content: flex-end;
-    padding-right: 10px;
-}
-/* === Fancy Medieval Scrollbar for WebKit Browsers === */
-#campaign-info::-webkit-scrollbar {
-  width: 12px;
+.light main {
+  background: rgba(255, 248, 220, 0.9);
+  border-color: #5c4033;
+  color: #3b2f2f;
 }
 
-#campaign-info::-webkit-scrollbar-track {
-  background: #e9ddc7; /* parchment-style background */
-  border-left: 1px solid #5c4033;
+.light input.question-box {
+  background-color: #f9f5e3;
+  border: 2px solid #a17c4e;
+  color: #3b2f2f;
 }
 
-#campaign-info::-webkit-scrollbar-thumb {
-  background: linear-gradient(135deg, #8a623a, #5c4033); /* wood-grain look */
-  border-radius: 6px;
+.light input[type="submit"] {
+  background-color: #a17c4e;
+  color: #fff8e1;
+}
+
+.light input[type="submit"]:hover {
+  background-color: #8a623a;
+}
+
+.light .bubble {
+  background-color: #fdf8e3;
+  color: #3b2f2f;
+  border-color: #5c4033;
+}
+
+.light .bubble.user {
+  background-color: #e0d8b0;
+}
+
+.light .bubble.assistant {
+  background-color: #f2eac1;
+}
+
+.light .prompt-suggestions-button {
+  background-color: #c2a774;
+  color: #fffdf5;
+}
+
+.light .prompt-suggestions-button:hover {
+  background-color: #a88b5b;
+}
+
+.light #campaign-info::-webkit-scrollbar-track {
+  background: #e9ddc7;
+}
+
+.light #campaign-info::-webkit-scrollbar-thumb {
+  background: linear-gradient(135deg, #8a623a, #5c4033);
   border: 2px solid #c2a774;
 }
 
-#campaign-info::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(135deg, #a17c4e, #704830);
-}
-
-/* Firefox */
-#campaign-info {
-  scrollbar-width: thin;
+.light #campaign-info {
   scrollbar-color: #8a623a #e9ddc7;
 }
 
-/* === Form & Inputs === */
-form {
+/* === Dark Mode === */
+.dark body {
+  background-image: url("./assets/background.jpg");
+}
+
+.dark main {
+  background: rgba(30, 30, 30, 0.85);
+  border-color: #888;
+  color: #f8f4e3;
+}
+
+.dark input.question-box {
+  background-color: #2e2e2e;
+  border: 2px solid #555;
+  color: #f8f4e3;
+}
+
+.dark input[type="submit"] {
+  background-color: #555;
+  color: #f8f4e3;
+}
+
+.dark input[type="submit"]:hover {
+  background-color: #777;
+}
+
+.dark .bubble {
+  background-color: #3a3a3a;
+  color: #f0e6d2;
+  border-color: #666;
+}
+
+.dark .bubble.user {
+  background-color: #474139;
+}
+
+.dark .bubble.assistant {
+  background-color: #51493f;
+}
+
+.dark .prompt-suggestions-button {
+  background-color: #666;
+  color: #f0e6d2;
+}
+
+.dark .prompt-suggestions-button:hover {
+  background-color: #888;
+}
+
+.dark #campaign-info::-webkit-scrollbar-track {
+  background: #2e2e2e;
+}
+
+.dark #campaign-info::-webkit-scrollbar-thumb {
+  background: linear-gradient(135deg, #666, #444);
+  border: 2px solid #333;
+}
+
+.dark #campaign-info {
+  scrollbar-color: #666 #2e2e2e;
+}
+
+
+
+
+.info-button {
+    width: 30%;
+    height: 5%;
     display: flex;
-    border-top: 2px solid #5c4033;
-    padding-top: 20px;
-    border-radius: 0 0 10px 10px;
-    gap: 10px;
+    justify-content: center;
+}
+
+
+
+/* === Scrollable Section === */
+section {
+  width: 100%;
+}
+form{
+  justify-content: center;
+}
+#campaign-info {
+  flex: 1;
+  overflow-y: auto;
+  margin: 1rem 0;
+  min-height: calc(60vh - 200px);
+  width: 95%;
+}
+
+section.populated {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding-right: 10px;
+}
+
+/* === Form === */
+form {
+  display: flex;
+  border-top: 2px solid #5c4033;
+  padding-top: 20px;
+  gap: 10px;
 }
 
 input.question-box {
-    min-width: 15vw;
-    padding: 10px;
-    font-size: 16px;
-    border: 2px solid #a17c4e;
-    border-radius: 8px;
-    background-color: #f9f5e3;
-    color: #3b2f2f;
+  min-width: 15vw;
+  padding: 10px;
+  font-size: 16px;
+  border-radius: 8px;
 }
 
 input[type="submit"] {
-    min-width: 5vw;
-    padding: 10px;
-    font-size: 16px;
-    background-color: #a17c4e;
-    color: #fff8e1;
-    border: none;
-    border-radius: 8px;
-    cursor: pointer;
-    transition: background 0.3s;
-}
-
-input[type="submit"]:hover {
-    background-color: #8a623a;
+  min-width: 5vw;
+  padding: 10px;
+  font-size: 16px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  transition: background 0.3s ease;
 }
 
 input:focus {
-    outline: 2px solid #5c4033;
-}
-
-/* === Loader (keep minimal style changes) === */
-.loader {
-    margin: 10px;
-    width: 60px;
-    aspect-ratio: 4;
-    background: no-repeat radial-gradient(circle closest-side, slategray, 90%, black) 0 50%,
-                no-repeat radial-gradient(circle closest-side, slategray, 90%, black) 50% 50%,
-                no-repeat radial-gradient(circle closest-side, slategray, 90%, black) 100% 50%;
-    background-size: calc(100%/3) 100%;
-    animation: loading 1s infinite linear;
-}
-
-@keyframes loading {
-    33% { background-size: calc(100%/3) 0%, calc(100%/3) 100%, calc(100%/3) 100%; }
-    50% { background-size: calc(100%/3) 100%, calc(100%/3) 0%, calc(100%/3) 100%; }
-    66% { background-size: calc(100%/3) 100%, calc(100%/3) 0%, calc(100%/3) 0; }
+  outline: 2px solid #5c4033;
 }
 
 /* === Chat Bubbles === */
 .bubble {
-    margin: 8px;
-    padding: 12px;
-    font-size: 16px;
-    border: 1px solid #5c4033;
-    border-radius: 12px;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.2);
-    width: 80%;
-    text-align: left;
-    background-color: #fdf8e3;
-    color: #3b2f2f;
+  margin: 8px auto;
+  padding: 12px;
+  font-size: 16px;
+  border: 1px solid;
+  border-radius: 14px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+  width: 80%;
+  text-align: left;
 }
 
-.bubble.user {
-    border-radius: 20px 20px 0 20px;
-    background-color: #e0d8b0;
-    margin-left: auto;
+.bubble-user {
+  border-radius: 20px 20px 0 20px;
+  /* margin-left: auto; */
+  margin-left: 20%
 }
 
-.bubble.assistant {
-    border-radius: 20px 20px 20px 0;
-    background-color: #f2eac1;
-    margin-right: auto;
+.bubble-assistant {
+  border-radius: 20px 20px 20px 0;
+  /* margin-right: auto; */
+  margin-right: 20%;
 }
 
 /* === Prompt Buttons === */
 .prompt-suggestions {
-    width: 100%;
-    display: flex;
-    gap: 10px;
-    flex-wrap: wrap;
-    justify-content: center;
+  width: 100%;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
 }
 
 .prompt-suggestions-button {
-    margin: 8px;
-    padding: 8px 12px;
-    font-size: 16px;
-    border: none;
-    border-radius: 10px;
-    background-color: #c2a774;
-    color: #fffdf5;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.2);
-    cursor: pointer;
-    transition: background 0.3s ease;
+  margin: 8px;
+  padding: 8px 12px;
+  font-size: 16px;
+  border-radius: 10px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+  border: none;
+  cursor: pointer;
+  transition: background 0.3s ease;
 }
 
-.prompt-suggestions-button:hover {
-    background-color: #a88b5b;
-}
-
+/* === Campaign Panel === */
 .campaign-panel {
   background: url('assets/parchment.jpg');
   border: 2px solid saddlebrown;
@@ -202,9 +281,11 @@ input:focus {
   margin: auto;
 }
 
-.message-content{
-      height: 200px;
-      overflow-y: scroll; 
-      border: 1px solid #ccc; 
-      padding: 10px;
+/* === Scrollable Message Area === */
+.message-content {
+  height: 200px;
+  overflow-y: auto;
+  border: 1px solid #ccc;
+  padding: 10px;
+  
 }

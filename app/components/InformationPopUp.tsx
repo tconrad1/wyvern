@@ -4,7 +4,7 @@ import 'reactjs-popup/dist/index.css';
 
 function InformationPopupWithLibrary({ message }) {
   return (
-    <Popup trigger={<button>Show Info</button>} position="right top">
+    <Popup trigger={<button className='info-button'>Show Info</button>} position="right top">
       <div>{message}</div>
     </Popup>
   );

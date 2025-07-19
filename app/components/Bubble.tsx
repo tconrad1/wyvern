@@ -22,7 +22,7 @@ const cleanContent = (text: string): string => {
 
 const Bubble: React.FC<BubbleProps> = ({ message }) => {
   return (
-    <div className={`bubble ${message.role}`}>
+    <div className={`bubble bubble-${message.role}`}>
       <div
         className="message-content"
         // Sanitize to avoid XSS attacks
