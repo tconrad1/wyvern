@@ -17,11 +17,11 @@ export async function POST(req: NextRequest) {
 
   const slug = slugify(name.toLowerCase(), { lower: true });
 
-  const exists = await campaigns.findOne({ _id: slug });
+  const exists = await campaigns.findOne({ _id: slug as any });
   if (exists) return new Response("Campaign already exists", { status: 409 });
 
   await campaigns.insertOne({
-    _id: slug,
+    _id: slug as any,
     name,
     createdAt: new Date(),
     ...(password ? { password } : {}),

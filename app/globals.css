@@ -21,7 +21,7 @@ body {
 }
 
 /* === Main Container === */
-main {
+.card {
   width: 85vw;
   height: 85vh;
   border-radius: 18px;

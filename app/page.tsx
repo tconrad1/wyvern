@@ -2,14 +2,21 @@
 
 import Image from "next/image";
 import Logo  from "./components/Logo";
-import { Message } from "ai";
 import Bubble from "./components/Bubble";
 import LoadingBubble from "./components/loading";
 import PromptSuggestions from "./components/PromptSuggestions";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import CampaignManager from "./components/CampaignManager"
 import  InformationPopUp  from "./components/InformationPopUp";
 import Settings from "./components/Settings";
+
+// Define Message type locally
+type Message = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  timestamp: string;
+};
 
 const Home = () => {
   const [input, setInput] = useState("");
@@ -17,7 +24,30 @@ const Home = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [campaignId, setCampaignId] = useState<string | null>(null);
 
-  const model_to_use = "gemini";
+  // Fetch past messages when campaignId changes
+  useEffect(() => {
+    if (!campaignId) return;
+    (async () => {
+      try {
+        const res = await fetch(`/api/chat?campaignId=${encodeURIComponent(campaignId)}`);
+        if (res.ok) {
+          const data = await res.json();
+          // Defensive: ensure messages are in the right format
+          const loaded = Array.isArray(data)
+            ? data.map((m) => ({
+                id: m.id,
+                role: m.role,
+                content: m.content,
+                timestamp: m.timestamp,
+              }))
+            : [];
+          setMessages(loaded);
+        }
+      } catch (err) {
+        console.error("Failed to load past messages", err);
+      }
+    })();
+  }, [campaignId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -29,6 +59,7 @@ const Home = () => {
       id: crypto.randomUUID(),
       role: "user",
       content: input.trim(),
+      timestamp: new Date().toISOString(),
     };
     console.log("User message:", userMessage);
     const updatedMessages = [...messages, userMessage];
@@ -41,7 +72,6 @@ const Home = () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           messages: updatedMessages,
-          model: model_to_use,
           campaignId,
         }),
       });
@@ -57,9 +87,10 @@ const Home = () => {
 
       setMessages((prev) => [
         ...prev,
-        { id: assistantMessageId, role: "assistant", content: "" },
+        { id: assistantMessageId, role: "assistant", content: "", timestamp: new Date().toISOString() },
       ]);
 
+      let assistantMessageContent = "";
       while (!done) {
         const { value, done: doneReading } = await reader.read();
         done = doneReading;
@@ -68,11 +99,13 @@ const Home = () => {
 
           // Safely parse and decode any escaped characters
           try {
-            chunk = JSON.parse(`"${chunk.replace(/"/g, '\\"')}"`);
+            chunk = JSON.parse(`"${chunk.replace(/"/g, '\"')}"`);
           } catch (e) {
-            // fallback: replace \n with <br /> manually
+            // fallback: replace \\n with <br /> manually
             chunk = chunk.replace(/\\n/g, "<br />").replace(/\n/g, "<br />");
           }
+
+          assistantMessageContent += chunk;
 
           setMessages((prev) => {
             const messagesCopy = [...prev];
@@ -89,6 +122,21 @@ const Home = () => {
           });
         }
       }
+      // After assistant message is fully received, save it to backend
+      const assistantMsg = {
+        id: assistantMessageId,
+        role: "assistant",
+        content: assistantMessageContent,
+        timestamp: new Date().toISOString(),
+      };
+      await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          campaignId,
+          messages: [assistantMsg],
+        }),
+      });
     } catch (err) {
       console.error("Error during fetch:", err);
     }
@@ -108,70 +156,70 @@ const Home = () => {
   };
 
   const noMessages = messages.length === 0;
-     if(!campaignId) {
-          return (
-            <main>
-              <Settings />
-              {Logo("tarot")}
-              <h1>Wyvern Storyteller</h1>
-              <InformationPopUp message="Welcome to Wyvern Storyteller! Please select or create a campaign to start chatting with your AI Game Master. It is still a work in progress and you may need to let your AI GM know information pertaining to your character. :)" />
-
-
-              <p className="subtitle">Choose or create a campaign to begin</p>
-              <CampaignManager onSelect={(id) => setCampaignId(id)} />
-
-            </main>
-          );
-        }
-
+  if (!campaignId) {
     return (
-      
-       
-        
-
-        
-        <main>
+      <main className="centered-card">
+        <div className="card">
           <Settings />
-        {Logo("tarot")}
+          <Logo name="tarot" />
+          <h1>Wyvern Storyteller</h1>
+          <InformationPopUp message="Welcome to Wyvern Storyteller! Please select or create a campaign to start chatting with your AI Game Master. It is still a work in progress and you may need to let your AI GM know information pertaining to your character. :)" />
+          <p className="subtitle">Choose or create a campaign to begin</p>
+          <CampaignManager onSelect={(id) => setCampaignId(id)} />
+        </div>
+      </main>
+    );
+  }
+  else{
+  return (
+    <main className="centered-card">
+      <div className="card">
+        <Settings />
+        <button
+          className="back-button button secondary"
+          style={{ alignSelf: 'flex-start', marginBottom: 12 }}
+          onClick={() => setCampaignId(null)}
+        >
+          ← Back to Campaigns
+        </button>
+        <Logo name="tarot" />
         <h1>Wyvern Storyteller</h1>
         <p className="campaign-name">📜 Current Campaign: <strong>{campaignId ? campaignId : "None" }</strong></p>
-
-      <div id="campaign-info"> 
-      <section className={noMessages ? "" : "populated"}>
-        {noMessages ? (
-          <>
-            <p className="starter-text"> Welcome to Wyvern DM </p>
-            <br />
-            <PromptSuggestions onPromptClick={handlePrompt} />
-          </>
-        ) : (
-          <>
-            {messages.map((message, index) => (
-              <Bubble
-                key={`message-${index}`}
-                message={{ ...message, content: message.content.replace(/\n/g, "\n") }}
+        <div id="campaign-info">
+          <section className={noMessages ? "" : "populated"}>
+            {noMessages ? (
+              <>
+                <p className="starter-text"> Welcome to Wyvern DM </p>
+                <br />
+                <PromptSuggestions onPromptClick={handlePrompt} />
+              </>
+            ) : (
+              <>
+                {messages.map((message, index) => (
+                  <Bubble
+                    key={`message-${index}`}
+                    message={{ ...message, content: message.content.replace(/\n/g, "\n") }}
+                    timestamp={message.timestamp}
+                  />
+                ))}
+                {isLoading && <LoadingBubble />}
+              </>
+            )}
+            <form onSubmit={handleSubmit}>
+              <input
+                className="question-box"
+                onChange={handleInputChange}
+                value={input}
+                placeholder="Enter message here"
               />
-            ))}
-            {isLoading && <LoadingBubble />}
-          </>
-        )}
-     
-
-      <form onSubmit={handleSubmit}>
-        <input
-          className="question-box"
-          onChange={handleInputChange}
-          value={input}
-          placeholder="Enter message here"
-        />
-
-        
-        <input type="submit" />
-      </form>
-       </section>
+              <input type="submit" />
+            </form>
+          </section>
+        </div>
       </div>
     </main>
-  );
+    );
+  }
 };
 
 

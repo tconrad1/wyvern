@@ -1,5 +1,6 @@
 "use client";
 import React, { useState, useEffect } from "react";
+import styles from "./Button.module.css";
 
 export default function CampaignManager({ onSelect }: { onSelect: (id: string) => void }) {
   const [campaigns, setCampaigns] = useState([]);
@@ -28,7 +29,7 @@ export default function CampaignManager({ onSelect }: { onSelect: (id: string) =
   };
 
   return (
-    <div className="campaign-panel">
+    <>
       <h2>Select a Campaign</h2>
       <ul>
         {campaigns.map((c) => (
@@ -40,12 +41,13 @@ export default function CampaignManager({ onSelect }: { onSelect: (id: string) =
 
       <h3>Create New Campaign</h3>
       <input
+        id="campaign-name-input"
         type="text"
         placeholder="Campaign name"
         value={newName}
         onChange={(e) => setNewName(e.target.value)}
       />
-      <button onClick={createCampaign}>Create</button>
-    </div>
+      <button className={styles.button} onClick={createCampaign}>Create Campaign</button>
+    </>
   );
 }

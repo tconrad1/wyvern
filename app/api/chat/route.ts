@@ -1,17 +1,13 @@
-import { streamText, tool } from "ai";
-import { zodToJsonSchema } from "zod-to-json-schema";
 import { MongoClient, ObjectId, Db, Filter } from "mongodb";
 import { NextRequest } from "next/server";
 import z from "zod";
+import { GoogleGenerativeAI, FunctionDeclaration, Content } from '@google/generative-ai';
 
-import { getModelInfo } from "./modelRouter";
 import { getDB } from "./mongo";
 import { getWeaviateSingleton } from "./weaviateSingleton";
-import { convertToolsToGemini } from "./toolCallingUtility";
 import { prompts } from "../../../scripts/prompt";
 import { PlayerObject, MonsterObject } from "../../../scripts/dataTypes";
-import { GoogleGenerativeAI, FunctionDeclaration, Content } from '@google/generative-ai';
-//fix gameState issue 
+
 // === Schemas ===
 const classSchema = z.object({
   className: z.string(),
@@ -19,10 +15,7 @@ const classSchema = z.object({
   level: z.number().optional(),
   primaryClass: z.boolean().optional(),
 });
-// interface GameState {
-//   players: Record<string, PlayerObject>;
-//   monsters: Record<string, MonsterObject>;
-// }
+
 const playerSchema = z.object({
   hp: z.number(),
   name: z.string(),
@@ -70,6 +63,83 @@ function isValidMonster(monster: MonsterObject): boolean {
   return monster && typeof monster.hp === "number" && typeof monster.type === "string";
 }
 
+// Convert Zod schema to Gemini function declaration
+function zodToGeminiFunction(name: string, description: string, schema: z.ZodTypeAny): FunctionDeclaration {
+  // Convert Zod schema to JSON Schema format that Gemini expects
+  function zodToJsonSchema(zodSchema: z.ZodTypeAny): any {
+    if (zodSchema instanceof z.ZodObject) {
+      const shape = zodSchema.shape;
+      const properties: Record<string, any> = {};
+      const required: string[] = [];
+      
+      for (const [key, value] of Object.entries(shape)) {
+        if (value instanceof z.ZodString) {
+          properties[key] = { type: 'STRING' };
+        } else if (value instanceof z.ZodNumber) {
+          properties[key] = { type: 'NUMBER' };
+        } else if (value instanceof z.ZodBoolean) {
+          properties[key] = { type: 'BOOLEAN' };
+        } else if (value instanceof z.ZodArray) {
+          properties[key] = { type: 'ARRAY' };
+        } else if (value instanceof z.ZodObject) {
+          properties[key] = zodToJsonSchema(value);
+        } else if (value instanceof z.ZodOptional) {
+          // Optional fields don't go in required array
+          properties[key] = zodToJsonSchema(value.unwrap());
+        } else {
+          properties[key] = { type: 'STRING' }; // Default to string
+        }
+        
+        // Add to required if not optional
+        if (!(value instanceof z.ZodOptional)) {
+          required.push(key);
+        }
+      }
+      
+      return {
+        type: 'OBJECT',
+        properties,
+        required
+      };
+    }
+    
+    return { type: 'STRING' }; // Default fallback
+  }
+  
+  return {
+    name,
+    description,
+    parameters: zodToJsonSchema(schema)
+  };
+}
+
+// === GET: Fetch all messages for a campaign ===
+export async function GET(req: NextRequest) {
+  const { searchParams } = new URL(req.url);
+  const campaignId = searchParams.get("campaignId");
+  if (!campaignId) {
+    return new Response("Missing campaignId", { status: 400 });
+  }
+  let mongoClient: MongoClient | undefined;
+  try {
+    const { mongoClient: client, db } = await getDB();
+    mongoClient = client;
+    const messages = await db
+      .collection("messages")
+      .find({ campaignId })
+      .sort({ timestamp: 1 })
+      .toArray();
+    return new Response(JSON.stringify(messages), {
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (err) {
+    console.error("Error fetching messages:", err);
+    return new Response("Internal Server Error", { status: 500 });
+  } finally {
+    if (mongoClient) await mongoClient.close();
+  }
+}
+
 // Main handler
 export async function POST(req: NextRequest) {
   let mongoClient: MongoClient | undefined;
@@ -80,12 +150,32 @@ export async function POST(req: NextRequest) {
 
     const weaviate = await getWeaviateSingleton();
 
-    const { campaignId, messages, model: modelName } = await req.json();
-    if (!modelName || !campaignId)
-      return new Response("Missing model or campaignId", { status: 400 });
+    const { campaignId, messages } = await req.json();
+    if (!campaignId) {
+      return new Response("Missing campaignId", { status: 400 });
+    }
 
-    const { model, provider } = getModelInfo(modelName);
-    const isGemini = provider === "gemini";
+    // Save all incoming messages to the DB (if not already present)
+    if (Array.isArray(messages)) {
+      const bulk = messages.map((m) => ({
+        updateOne: {
+          filter: { id: m.id },
+          update: {
+            $setOnInsert: {
+              id: m.id,
+              campaignId,
+              role: m.role,
+              content: m.content,
+              timestamp: m.timestamp || new Date(),
+            },
+          },
+          upsert: true,
+        },
+      }));
+      if (bulk.length > 0) {
+        await db.collection("messages").bulkWrite(bulk, { ordered: false });
+      }
+    }
 
     const latestMessage = messages[messages.length - 1]?.content ?? "";
     let docContext = "";
@@ -98,10 +188,12 @@ export async function POST(req: NextRequest) {
       docContext = JSON.stringify(result.objects.map(obj => obj.properties?.text).filter(Boolean));
     } catch (err) {
       console.error("Weaviate query failed:", err);
+      // Use empty context if Weaviate fails - this is expected when Ollama isn't running
+      docContext = "";
     }
 
     // Load game state from MongoDB
-    let gameState : any = { players: {}, monsters: {} };
+    let gameState: any = { players: {}, monsters: {} };
     try {
       const [players, monsters] = await Promise.all([
         db.collection("players").find({ campaignId }).toArray(),
@@ -125,198 +217,226 @@ export async function POST(req: NextRequest) {
 
     // Define tool functions
     const tools = {
-      async updatePlayer({ id, data }) {
+      async updatePlayer({ id, data }: { id: string; data: any }) {
         const col = db.collection("players");
         if (isValidPlayer(data)) {
           await col.updateOne(getIdFilter(id), { $set: { ...data, campaignId } }, { upsert: true });
+          return { success: true, message: `Updated player ${id}` };
         }
+        return { success: false, message: "Invalid player data" };
       },
-      async updateMonster({ id, data }) {
+      
+      async updateMonster({ id, data }: { id: string; data: any }) {
         const col = db.collection("monsters");
         if (isValidMonster(data)) {
           await col.updateOne(getIdFilter(id), { $set: { ...data, campaignId } }, { upsert: true });
+          return { success: true, message: `Updated monster ${id}` };
         }
+        return { success: false, message: "Invalid monster data" };
       },
-      async logCampaign({ narration, updates }) {
+      
+      async logCampaign({ narration, updates }: { narration: string; updates?: any }) {
         await db.collection("campaign_log").insertOne({
           timestamp: new Date(),
           user_message: latestMessage,
           narration,
           updates_applied: updates || null,
         });
+        return { success: true, message: "Campaign logged" };
       },
-      async RollDie({sides, advantage, disadvantage, offset}){
+      
+      async rollDie({ sides, advantage, disadvantage, offset }: { 
+        sides: number; 
+        advantage: boolean; 
+        disadvantage: boolean; 
+        offset: number;
+      }) {
         let roll;
         if ((advantage && disadvantage) || !(advantage || disadvantage)) {
-          roll = Math.floor(Math.random() * (sides - 1) + 1) + offset;
+          roll = Math.floor(Math.random() * sides) + 1 + offset;
         } else if (advantage) {
-          roll = Math.max(
-            Math.floor(Math.random() * (sides - 1) + 1) + offset,
-            Math.floor(Math.random() * (sides - 1) + 1) + offset
-          );
+          const roll1 = Math.floor(Math.random() * sides) + 1;
+          const roll2 = Math.floor(Math.random() * sides) + 1;
+          roll = Math.max(roll1, roll2) + offset;
         } else {
-          roll = Math.min(
-            Math.floor(Math.random() * (sides - 1) + 1) + offset,
-            Math.floor(Math.random() * (sides - 1) + 1) + offset
-          );
+          const roll1 = Math.floor(Math.random() * sides) + 1;
+          const roll2 = Math.floor(Math.random() * sides) + 1;
+          roll = Math.min(roll1, roll2) + offset;
         }
-        return { result: roll };
+        return { result: roll, sides, advantage, disadvantage, offset };
       },
     };
 
-    // Tool definitions for OpenAI (no RollDie)
-    const sharedToolDefs = [
+    // Tool definitions for Gemini
+    const toolDefs = [
       {
         name: "updatePlayer",
-        description: "Update player info",
-        parameters: playerSchema,
+        description: "Update player information in the game state",
+        parameters: z.object({
+          id: z.string().describe("The unique identifier for the player"),
+          data: playerSchema,
+        }),
         execute: tools.updatePlayer,
       },
       {
         name: "updateMonster",
-        description: "Update monster info",
-        parameters: monsterSchema,
+        description: "Update monster information in the game state",
+        parameters: z.object({
+          id: z.string().describe("The unique identifier for the monster"),
+          data: monsterSchema,
+        }),
         execute: tools.updateMonster,
       },
       {
         name: "logCampaign",
-        description: "Log narration and updates",
+        description: "Log campaign narration and any updates made",
         parameters: z.object({
-          narration: z.string(),
-          updates: z.any().optional(),
+          narration: z.string().describe("The narrative description of what happened"),
+          updates: z.any().optional().describe("Any updates that were applied to the game state"),
         }),
         execute: tools.logCampaign,
-      }
-    ];
-    // Tool definitions for Gemini (includes RollDie)
-    const geminiToolDefs = [
-      ...sharedToolDefs,
+      },
       {
-        name: "RollDie",
-        description: "Roll a die, number of sides, rolled with advantage, rolled with disadvantage, and offset are paramaters.",
-        parameters : z.object({
-          sides: z.number(),
-          advantage: z.boolean(),
-          disadvantage: z.boolean(),
-          offset: z.number(),
+        name: "rollDie",
+        description: "Roll a die with specified sides, advantage/disadvantage, and offset",
+        parameters: z.object({
+          sides: z.number().describe("Number of sides on the die (e.g., 6 for d6, 20 for d20)"),
+          advantage: z.boolean().describe("Whether to roll with advantage (take higher of two rolls)"),
+          disadvantage: z.boolean().describe("Whether to roll with disadvantage (take lower of two rolls)"),
+          offset: z.number().describe("Number to add to the final roll result"),
         }),
-        execute: tools.RollDie,
+        execute: tools.rollDie,
       }
     ];
 
-    if (isGemini) {
-      // Gemini tool-calling using @google/generative-ai
-      const apiKey = process.env.GOOGLE_API_KEY || process.env.GOOGLE_API_KEY_GEMINI || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
-      if (!apiKey) {
-        throw new Error("Missing GOOGLE_API_KEY for Gemini");
-      }
-      const genAI = new GoogleGenerativeAI(apiKey);
-      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-
-      // Convert tools to Gemini function declarations
-      const geminiFunctions: FunctionDeclaration[] = convertToolsToGemini(
-        geminiToolDefs.map(def => {
-          let jsonSchema = zodToJsonSchema(def.parameters);
-          if (
-            def.name === "logCampaign" &&
-            (jsonSchema as any).properties &&
-            (jsonSchema as any).properties.updates &&
-            !(jsonSchema as any).properties.updates.type
-          ) {
-            (jsonSchema as any).properties.updates.type = "object";
-          }
-          return {
-            type: "function",
-            function: {
-              name: def.name,
-              description: def.description,
-              parameters: jsonSchema,
-            },
-          };
-        })
-      );
-      const geminiTools = [{ functionDeclarations: geminiFunctions }];
-
-      // Prepare Gemini content
-      // Gemini does not support 'system' role. Prepend system prompt as first user message.
-      let geminiMessages: Content[] = [
-        { role: "user", parts: [{ text: prompt }] },
-        ...messages.map(m => ({ role: m.role, parts: [{ text: m.content }] }))
-      ];
-
-      // Tool call/response loop
-      let toolCallCount = 0;
-      let response;
-      while (true) {
-        console.log("Gemini messages before generateContent:", JSON.stringify(geminiMessages, null, 2));
-        response = await model.generateContent({
-          contents: geminiMessages,
-          tools: geminiTools,
-        });
-        const functionCalls = response.response.functionCalls?.() || [];
-        console.log("Gemini functionCalls count:", functionCalls.length);
-        if (!functionCalls.length) break;
-        // Prepare functionResponse parts for each tool call
-        const functionResponseParts = [];
-        for (const call of functionCalls) {
-          const toolDef = geminiToolDefs.find(t => t.name === call.name);
-          if (toolDef && toolDef.execute) {
-            const result = await toolDef.execute(call.args);
-            functionResponseParts.push({
-              functionResponse: {
-                name: call.name,
-                response: result,
-              },
-            });
-          }
-        }
-        console.log("Gemini functionResponseParts count:", functionResponseParts.length);
-        // Remove any trailing tool messages (shouldn't be there, but just in case)
-        while (geminiMessages.length && geminiMessages[geminiMessages.length - 1].role === "tool") {
-          geminiMessages.pop();
-        }
-        // After a function call turn, the very next message must be a single tool message
-        // with exactly the right number of functionResponse parts, and nothing else.
-        geminiMessages.push({ role: "tool", parts: functionResponseParts });
-      }
-      // Return the final response text
-      const text = response.response.text();
-      return new Response(JSON.stringify({ text }), {
-        headers: {
-          "Content-Type": "application/json; charset=utf-8",
-          "Cache-Control": "no-cache",
-        },
-      });
-    } else {
-      // OpenAI style: pass tools as object ToolSet
-      const openAIToolObject = Object.fromEntries(
-        sharedToolDefs.map(def => [
-          def.name,
-          tool({
-            description: def.description,
-            parameters: def.parameters,
-            execute: def.execute,
-          }),
-        ])
-      );
-
-      const streamResult = await streamText({
-        model,
-        messages: [
-          { role: "system", content: prompt },
-          ...messages,
-        ],
-        tools: openAIToolObject,
-      });
-
-      return new Response(streamResult.textStream, {
-        headers: {
-          "Content-Type": "application/json; charset=utf-8",
-          "Transfer-Encoding": "chunked",
-          "Cache-Control": "no-cache",
-        },
-      });
+    // Initialize Gemini
+    const apiKey = process.env.GOOGLE_API_KEY || process.env.GOOGLE_API_KEY_GEMINI || process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      throw new Error("Missing API key for Gemini. Please set GOOGLE_API_KEY, GOOGLE_API_KEY_GEMINI, GOOGLE_GENERATIVE_AI_API_KEY, or GEMINI_API_KEY");
     }
+    
+    const genAI = new GoogleGenerativeAI(apiKey);
+    // Use gemini-1.5-flash which has higher rate limits
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
+    // Convert tools to Gemini function declarations
+    const geminiFunctions: FunctionDeclaration[] = toolDefs.map(def => 
+      zodToGeminiFunction(def.name, def.description, def.parameters)
+    );
+
+    const geminiTools = [{ functionDeclarations: geminiFunctions }];
+
+    // Prepare Gemini content
+    // Gemini doesn't support 'system' role, so prepend system prompt as first user message
+    let geminiMessages: Content[] = [
+      { role: "user", parts: [{ text: prompt }] },
+      ...messages.map(m => ({ role: m.role, parts: [{ text: m.content }] }))
+    ];
+
+    // Simple chat with basic function calling
+    let response;
+    try {
+      response = await model.generateContent({
+        contents: geminiMessages,
+        tools: geminiTools,
+      });
+      
+      const responseText = response.response.text();
+      const functionCallsInResponse = response.response.functionCalls();
+      
+      console.log(`Gemini functionCalls count: ${functionCallsInResponse?.length || 0}`);
+      
+      // If there are function calls, execute them and return the result directly
+      if (functionCallsInResponse && functionCallsInResponse.length > 0) {
+        const functionResults = [];
+        
+        for (const functionCall of functionCallsInResponse) {
+          const toolDef = toolDefs.find(def => def.name === functionCall.name);
+          if (toolDef) {
+            try {
+              const result = await toolDef.execute(functionCall.args);
+              functionResults.push({
+                functionCall: functionCall,
+                response: result
+              });
+            } catch (error) {
+              console.error(`Error executing function ${functionCall.name}:`, error);
+              functionResults.push({
+                functionCall: functionCall,
+                response: { error: error.message }
+              });
+            }
+          }
+        }
+        
+        // Return the function results directly instead of trying to get a final response
+        const resultText = functionResults.map(result => {
+          if (result.functionCall.name === 'rollDie') {
+            const rollResult = result.response;
+            return `Rolled a d${rollResult.sides}${rollResult.advantage ? ' with advantage' : ''}${rollResult.disadvantage ? ' with disadvantage' : ''}${rollResult.offset ? ` + ${rollResult.offset}` : ''}: **${rollResult.result}**`;
+          }
+          return `${result.functionCall.name}: ${JSON.stringify(result.response)}`;
+        }).join('\n');
+        
+        return new Response(JSON.stringify({ text: resultText }), {
+          headers: {
+            "Content-Type": "application/json; charset=utf-8",
+            "Cache-Control": "no-cache",
+          },
+        });
+      }
+      
+      // No function calls, return the response as is
+      return new Response(JSON.stringify({ text: responseText }), {
+        headers: {
+          "Content-Type": "application/json; charset=utf-8",
+          "Cache-Control": "no-cache",
+        },
+      });
+      
+    } catch (error) {
+      console.error("Gemini API error:", error);
+      
+      // Try fallback without function calling
+      try {
+        console.log("Trying fallback without function calling...");
+        const fallbackResponse = await model.generateContent({
+          contents: geminiMessages,
+        });
+        
+        const fallbackText = fallbackResponse.response.text();
+        return new Response(JSON.stringify({ text: fallbackText }), {
+          headers: {
+            "Content-Type": "application/json; charset=utf-8",
+            "Cache-Control": "no-cache",
+          },
+        });
+      } catch (fallbackError) {
+        console.error("Fallback also failed:", fallbackError);
+        
+        // Handle rate limiting
+        if (error.status === 429) {
+          return new Response(JSON.stringify({ 
+            text: "I'm currently experiencing high traffic. Please try again in a few moments." 
+          }), {
+            headers: {
+              "Content-Type": "application/json; charset=utf-8",
+              "Cache-Control": "no-cache",
+            },
+          });
+        }
+        
+        return new Response(JSON.stringify({ 
+          text: "I'm having trouble connecting to my AI service. Please try again later." 
+        }), {
+          headers: {
+            "Content-Type": "application/json; charset=utf-8",
+            "Cache-Control": "no-cache",
+          },
+        });
+      }
+    }
+
   } catch (err) {
     console.error("Fatal error in POST:", err);
     return new Response("Internal Server Error", { status: 500 });

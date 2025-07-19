@@ -2,10 +2,10 @@
 
 import React from "react";
 import DOMPurify from "dompurify";
-import { Message } from "ai";
 
 interface BubbleProps {
-  message: Message;
+  message: { id: string; role: string; content: string; timestamp?: string };
+  timestamp?: string;
 }
 
 const cleanContent = (text: string): string => {
@@ -20,7 +20,7 @@ const cleanContent = (text: string): string => {
   return cleaned;
 };
 
-const Bubble: React.FC<BubbleProps> = ({ message }) => {
+const Bubble: React.FC<BubbleProps> = ({ message, timestamp }) => {
   return (
     <div className={`bubble bubble-${message.role}`}>
       <div
@@ -30,6 +30,11 @@ const Bubble: React.FC<BubbleProps> = ({ message }) => {
           __html: DOMPurify.sanitize(cleanContent(message.content)),
         }}
       />
+      {timestamp && (
+        <div style={{ fontSize: '0.75em', color: '#888', marginTop: 4, textAlign: 'right' }}>
+          {new Date(timestamp).toLocaleString()}
+        </div>
+      )}
     </div>
   );
 };

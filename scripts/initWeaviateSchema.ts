@@ -9,7 +9,7 @@ async function createSchema () {
   name: 'RuleContext',
   vectorizers: configure.vectorizer.text2VecOllama({
     model: 'nomic-embed-text',
-    apiEndpoint: 'http://host.docker.internal:11435'
+    apiEndpoint: 'http://localhost:11434'
   }),
   properties: [
     {
