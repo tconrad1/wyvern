@@ -345,16 +345,22 @@ export async function POST(req: NextRequest) {
       const functionCallsInResponse = response.response.functionCalls();
       
       console.log(`Gemini functionCalls count: ${functionCallsInResponse?.length || 0}`);
+      console.log('Gemini response text:', responseText); // Debug log
       
-      // If there are function calls, execute them and return the result directly
+      // If there are function calls, execute them and include results with the narrative
       if (functionCallsInResponse && functionCallsInResponse.length > 0) {
         const functionResults = [];
+        let narrativeResponse = responseText;
         
         for (const functionCall of functionCallsInResponse) {
           const toolDef = toolDefs.find(def => def.name === functionCall.name);
           if (toolDef) {
             try {
               const result = await toolDef.execute(functionCall.args);
+              // For logCampaign calls, ensure we capture the narration if responseText is empty
+              if (functionCall.name === 'logCampaign' && !responseText.trim() && functionCall.args.narration) {
+                narrativeResponse = functionCall.args.narration;
+              }
               functionResults.push({
                 functionCall: functionCall,
                 response: result
@@ -369,16 +375,20 @@ export async function POST(req: NextRequest) {
           }
         }
         
-        // Return the function results directly instead of trying to get a final response
-        const resultText = functionResults.map(result => {
+        // Format the response with both narrative and any roll results
+        let resultText = narrativeResponse + "\n\n";
+        
+        // Only append roll results since other function calls are administrative
+        functionResults.forEach(result => {
           if (result.functionCall.name === 'rollDie') {
             const rollResult = result.response;
-            return `Rolled a d${rollResult.sides}${rollResult.advantage ? ' with advantage' : ''}${rollResult.disadvantage ? ' with disadvantage' : ''}${rollResult.offset ? ` + ${rollResult.offset}` : ''}: **${rollResult.result}**`;
+            resultText += `🎲 Rolled a d${rollResult.sides}${rollResult.advantage ? ' with advantage' : ''}${rollResult.disadvantage ? ' with disadvantage' : ''}${rollResult.offset ? ` + ${rollResult.offset}` : ''}: **${rollResult.result}**\n`;
           }
-          return `${result.functionCall.name}: ${JSON.stringify(result.response)}`;
-        }).join('\n');
+        });
+
+        console.log('Final response text:', resultText); // Debug log
         
-        return new Response(JSON.stringify({ text: resultText }), {
+        return new Response(JSON.stringify({ text: resultText.trim() }), {
           headers: {
             "Content-Type": "application/json; charset=utf-8",
             "Cache-Control": "no-cache",

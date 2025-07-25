@@ -23,6 +23,7 @@
     "@google/generative-ai": "^0.24.1",
     "@langchain/community": "^0.3.46",
     "@langchain/core": "^0.3.58",
+    "ai": "^4.3.19",
     "dompurify": "^3.2.6",
     "dotenv": "^16.4.5",
     "langchain": "^0.3.28",
@@ -30,6 +31,7 @@
     "mongodb": "^6.17.0",
     "mongoose": "^8.16.1",
     "next": "^14.2.30",
+    "node-fetch": "^3.3.2",
     "puppeteer": "^24.10.0",
     "react": "^18.0.0",
     "react-dom": "^18.0.0",
@@ -38,8 +40,7 @@
     "tiktoken": "^1.0.21",
     "weaviate-client": "^3.6.2",
     "weaviate-ts-client": "^2.2.0",
-    "zod": "^3.25.76",
-    "node-fetch": "^3.3.2"
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",

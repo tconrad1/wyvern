@@ -170,9 +170,22 @@ body {
     height: 5%;
     display: flex;
     justify-content: center;
+
 }
 
+.dark .info-button  {
+  background-color: #555;
+  color: #f8f4e3;
+}
 
+.light .info-button  {
+  background-color: #a37623;
+  color: #fffdf5;
+}
+
+.light .info-button:hover {
+  background-color: #180f06;
+}
 
 /* === Scrollable Section === */
 section {

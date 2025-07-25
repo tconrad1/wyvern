@@ -18,6 +18,15 @@ type Message = {
   timestamp: string;
 };
 
+// Utility to extract plain text from a markdown/code block response
+function extractPlainTextFromResponse(response: string): string {
+  // Remove code blocks (```...```), JSON, and trim
+  const codeBlockRegex = /```[\s\S]*?```/g;
+  let text = response.replace(codeBlockRegex, '').trim();
+  // Optionally, remove leading/trailing newlines and whitespace
+  return text;
+}
+
 const Home = () => {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -79,12 +88,35 @@ const Home = () => {
       if (!response.ok) throw new Error("Failed to fetch response");
 
       const reader = response.body?.getReader();
-      if (!reader) throw new Error("ReadableStream not supported");
+      if (!reader) {
+        // Non-streaming fallback: parse JSON and use only the 'text' property
+        const responseJson = await response.json();
+        const assistantText = typeof responseJson.text === 'string' ? responseJson.text : '';
+        const assistantMessageId = crypto.randomUUID();
+        setMessages((prev) => [
+          ...prev,
+          { id: assistantMessageId, role: "assistant", content: assistantText, timestamp: new Date().toISOString() },
+        ]);
+        // Save to backend
+        await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            campaignId,
+            messages: [{
+              id: assistantMessageId,
+              role: "assistant",
+              content: assistantText,
+              timestamp: new Date().toISOString(),
+            }],
+          }),
+        });
+        setIsLoading(false);
+        return;
+      }
 
-      const decoder = new TextDecoder();
       let done = false;
       let assistantMessageId = crypto.randomUUID();
-
       setMessages((prev) => [
         ...prev,
         { id: assistantMessageId, role: "assistant", content: "", timestamp: new Date().toISOString() },
@@ -95,17 +127,20 @@ const Home = () => {
         const { value, done: doneReading } = await reader.read();
         done = doneReading;
         if (value) {
-          let chunk = decoder.decode(value, { stream: true });
+          let chunk = new TextDecoder().decode(value, { stream: true });
 
-          // Safely parse and decode any escaped characters
+          // Try to extract only the 'text' property if the chunk is a JSON object
+          let parsedChunk = chunk;
           try {
-            chunk = JSON.parse(`"${chunk.replace(/"/g, '\"')}"`);
+            const maybeJson = JSON.parse(chunk);
+            if (maybeJson && typeof maybeJson.text === 'string') {
+              parsedChunk = maybeJson.text;
+            }
           } catch (e) {
-            // fallback: replace \\n with <br /> manually
-            chunk = chunk.replace(/\\n/g, "<br />").replace(/\n/g, "<br />");
+            // Not JSON, use as is
           }
 
-          assistantMessageContent += chunk;
+          assistantMessageContent += parsedChunk;
 
           setMessages((prev) => {
             const messagesCopy = [...prev];
@@ -115,7 +150,7 @@ const Home = () => {
             if (lastIndex !== -1) {
               messagesCopy[lastIndex] = {
                 ...messagesCopy[lastIndex],
-                content: messagesCopy[lastIndex].content + chunk,
+                content: messagesCopy[lastIndex].content + parsedChunk,
               };
             }
             return messagesCopy;
@@ -126,7 +161,7 @@ const Home = () => {
       const assistantMsg = {
         id: assistantMessageId,
         role: "assistant",
-        content: assistantMessageContent,
+        content: extractPlainTextFromResponse(assistantMessageContent),
         timestamp: new Date().toISOString(),
       };
       await fetch("/api/chat", {
