@@ -33,7 +33,7 @@ body {
   transition: all 0.3s ease;
   border: 2px solid;
   box-shadow: 0 0 25px rgba(0, 0, 0, 0.4);
-  flex-wrap: wrap;
+  /* flex-wrap: wrap; */
   align-items: center;
 }
 

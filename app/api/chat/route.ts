@@ -6,47 +6,10 @@ import { GoogleGenerativeAI, FunctionDeclaration, Content } from '@google/genera
 import { getDB } from "./mongo";
 import { getWeaviateSingleton } from "./weaviateSingleton";
 import { prompts } from "../../../scripts/prompt";
-import { PlayerObject, MonsterObject } from "../../../scripts/dataTypes";
+import { PlayerObject, MonsterObject, classSchema, spellSchema , playerSchema, monsterSchema, fightSchema, FightObject } from "../../../scripts/dataTypes";
 
-// === Schemas ===
-const classSchema = z.object({
-  className: z.string(),
-  subclassName: z.string().optional(),
-  level: z.number().optional(),
-  primaryClass: z.boolean().optional(),
-});
 
-const playerSchema = z.object({
-  hp: z.number(),
-  name: z.string(),
-  status: z.string().optional(),
-  class: z.array(classSchema).optional(),
-  level: z.number().optional(),
-  species: z.string().optional(),
-  spells: z.array(z.string()).optional(),
-  inventory: z.array(z.string()).optional(),
-  spellSlots: z.object({
-    level1: z.number().optional(),
-    level2: z.number().optional(),
-    level3: z.number().optional(),
-    level4: z.number().optional(),
-    level5: z.number().optional(),
-    level6: z.number().optional(),
-    level7: z.number().optional(),
-    level8: z.number().optional(),
-    level9: z.number().optional(),
-  }).optional(),
-  background: z.string().optional(),
-  alignment: z.string().optional(),
-  feats: z.array(z.string()).optional(),
-});
 
-const monsterSchema = z.object({
-  type: z.string(),
-  hp: z.number(),
-  status: z.string().optional(),
-  class: classSchema.optional(),
-});
 
 // Utility to build MongoDB _id filter correctly
 function getIdFilter(id: string | ObjectId): Filter<Document> {
@@ -56,11 +19,36 @@ function getIdFilter(id: string | ObjectId): Filter<Document> {
 }
 
 function isValidPlayer(player: PlayerObject): boolean {
-  return player && typeof player.hp === "number";
+  try {
+    // Use Zod schema to validate the player data
+    playerSchema.parse(player);
+    return true;
+  } catch (error) {
+    console.error("Player validation failed:", error);
+    return false;
+  }
 }
 
 function isValidMonster(monster: MonsterObject): boolean {
-  return monster && typeof monster.hp === "number" && typeof monster.type === "string";
+  try {
+    // Use Zod schema to validate the monster data
+    monsterSchema.parse(monster);
+    return true;
+  } catch (error) {
+    console.error("Monster validation failed:", error);
+    return false;
+  }
+}
+
+function isValidFight(fight: FightObject): boolean {
+  try {
+    // Use Zod schema to validate the fight data
+    fightSchema.parse(fight);
+    return true;
+  } catch (error) {
+    console.error("Fight validation failed:", error);
+    return false;
+  }
 }
 
 // Convert Zod schema to Gemini function declaration
@@ -80,12 +68,37 @@ function zodToGeminiFunction(name: string, description: string, schema: z.ZodTyp
         } else if (value instanceof z.ZodBoolean) {
           properties[key] = { type: 'BOOLEAN' };
         } else if (value instanceof z.ZodArray) {
-          properties[key] = { type: 'ARRAY' };
+          // Handle array types more specifically
+          const arrayElement = value.element;
+          if (arrayElement instanceof z.ZodString) {
+            properties[key] = { type: 'ARRAY', items: { type: 'STRING' } };
+          } else if (arrayElement instanceof z.ZodNumber) {
+            properties[key] = { type: 'ARRAY', items: { type: 'NUMBER' } };
+          } else if (arrayElement instanceof z.ZodObject) {
+            properties[key] = { type: 'ARRAY', items: zodToJsonSchema(arrayElement) };
+          } else {
+            properties[key] = { type: 'ARRAY' };
+          }
         } else if (value instanceof z.ZodObject) {
           properties[key] = zodToJsonSchema(value);
         } else if (value instanceof z.ZodOptional) {
           // Optional fields don't go in required array
           properties[key] = zodToJsonSchema(value.unwrap());
+        } else if (value instanceof z.ZodUnion) {
+          // Handle union types (like string | number)
+          properties[key] = { type: 'STRING' }; // Default to string for unions
+        } else if (value instanceof z.ZodLiteral) {
+          // Handle literal types
+          const literalValue = value.value;
+          if (typeof literalValue === 'string') {
+            properties[key] = { type: 'STRING' };
+          } else if (typeof literalValue === 'number') {
+            properties[key] = { type: 'NUMBER' };
+          } else if (typeof literalValue === 'boolean') {
+            properties[key] = { type: 'BOOLEAN' };
+          } else {
+            properties[key] = { type: 'STRING' };
+          }
         } else {
           properties[key] = { type: 'STRING' }; // Default to string
         }
@@ -217,7 +230,7 @@ export async function POST(req: NextRequest) {
 
     // Define tool functions
     const tools = {
-      async updatePlayer({ id, data }: { id: string; data: any }) {
+      async updatePlayer({ id, data }: { id: string; data: PlayerObject }) {
         const col = db.collection("players");
         if (isValidPlayer(data)) {
           await col.updateOne(getIdFilter(id), { $set: { ...data, campaignId } }, { upsert: true });
@@ -226,7 +239,7 @@ export async function POST(req: NextRequest) {
         return { success: false, message: "Invalid player data" };
       },
       
-      async updateMonster({ id, data }: { id: string; data: any }) {
+      async updateMonster({ id, data }: { id: string; data: MonsterObject }) {
         const col = db.collection("monsters");
         if (isValidMonster(data)) {
           await col.updateOne(getIdFilter(id), { $set: { ...data, campaignId } }, { upsert: true });
@@ -234,7 +247,29 @@ export async function POST(req: NextRequest) {
         }
         return { success: false, message: "Invalid monster data" };
       },
-      
+      async updateFight({ id, data }: { id: string; data: FightObject }) {
+        const col = db.collection("fights");
+        if (isValidFight(data)) {
+          await col.updateOne(getIdFilter(id), { $set: { ...data, campaignId } }, { upsert: true });
+          return { success: true, message: `Updated fight ${id}` };
+        }
+        return { success: false, message: "Invalid fight data" };
+      },
+
+      async updatePlayerField({ id, field, value }: { id: string; field: string; value: any }) {
+        const col = db.collection("players");
+        const updateData = { [field]: value, campaignId };
+        await col.updateOne(getIdFilter(id), { $set: updateData }, { upsert: true });
+        return { success: true, message: `Updated player ${id} field ${field}` };
+      },
+
+      async updateMonsterField({ id, field, value }: { id: string; field: string; value: any }) {
+        const col = db.collection("monsters");
+        const updateData = { [field]: value, campaignId };
+        await col.updateOne(getIdFilter(id), { $set: updateData }, { upsert: true });
+        return { success: true, message: `Updated monster ${id} field ${field}` };
+      },
+
       async logCampaign({ narration, updates }: { narration: string; updates?: any }) {
         await db.collection("campaign_log").insertOne({
           timestamp: new Date(),
@@ -286,6 +321,35 @@ export async function POST(req: NextRequest) {
           data: monsterSchema,
         }),
         execute: tools.updateMonster,
+      },
+      {
+        name: "updateFight",
+        description: "Update fight information in the game state",
+        parameters: z.object({
+          id: z.string().describe("The unique identifier for the fight"),
+          data: fightSchema,
+        }),
+        execute: tools.updateFight,
+      },
+      {
+        name: "updatePlayerField",
+        description: "Update a specific field for a player",
+        parameters: z.object({
+          id: z.string().describe("The unique identifier for the player"),
+          field: z.string().describe("The field name to update (e.g., 'hp', 'UsedMovement', 'canAct')"),
+          value: z.any().describe("The new value for the field"),
+        }),
+        execute: tools.updatePlayerField,
+      },
+      {
+        name: "updateMonsterField",
+        description: "Update a specific field for a monster",
+        parameters: z.object({
+          id: z.string().describe("The unique identifier for the monster"),
+          field: z.string().describe("The field name to update (e.g., 'hp', 'UsedMovement', 'canAct')"),
+          value: z.any().describe("The new value for the field"),
+        }),
+        execute: tools.updateMonsterField,
       },
       {
         name: "logCampaign",

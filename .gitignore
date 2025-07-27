@@ -54,3 +54,5 @@ page-old.tsx
 # This file contains prompts for the AI and should not be tracked as it may contain sensitive information
 scripts/prompt.ts
 colors.txt
+.cursorrules
+.cursorignore
