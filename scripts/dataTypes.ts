@@ -17,6 +17,7 @@ export const spellSchema = z.object({
 
 export const playerSchema = z.object({
   hp: z.number(),
+  currentHp: z.number(),
   name: z.string(),
   status: z.string().optional(),
   resistances: z.array(z.string()).optional(),
@@ -61,6 +62,7 @@ export const playerSchema = z.object({
 export const monsterSchema = z.object({
   type: z.string(),
   hp: z.number(),
+  currentHp: z.number(),
   status: z.string().optional(),
   class: classSchema.optional(),
   resistances: z.array(z.string()).optional(),

@@ -1,13 +1,21 @@
 // Test script to verify project setup
 import fetch from 'node-fetch';
 
+// Environment variables for Docker compatibility
+const SERVER_HOST = process.env.SERVER_HOST || 'localhost';
+const SERVER_PORT = process.env.SERVER_PORT || '3000';
+const OLLAMA_HOST = process.env.OLLAMA_HOST || 'localhost';
+const OLLAMA_PORT = process.env.OLLAMA_PORT || '11434';
+const WEAVIATE_HOST = process.env.WEAVIATE_HOST || 'localhost';
+const WEAVIATE_PORT = process.env.WEAVIATE_PORT || '8080';
+
 async function testSetup() {
   console.log('🧪 Testing Wyvern Project Setup...\n');
 
   // Test 1: Check if server is running
   console.log('1. Testing server connectivity...');
   try {
-    const response = await fetch('http://localhost:3000/api/chat', {
+    const response = await fetch(`http://${SERVER_HOST}:${SERVER_PORT}/api/chat`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -32,7 +40,7 @@ async function testSetup() {
   // Test 2: Check Ollama
   console.log('\n2. Testing Ollama...');
   try {
-    const ollamaResponse = await fetch('http://localhost:11434/api/tags');
+    const ollamaResponse = await fetch(`http://${OLLAMA_HOST}:${OLLAMA_PORT}/api/tags`);
     if (ollamaResponse.ok) {
       const ollamaData = await ollamaResponse.json();
       console.log('✅ Ollama is running');
@@ -47,7 +55,7 @@ async function testSetup() {
   // Test 3: Check Weaviate
   console.log('\n3. Testing Weaviate...');
   try {
-    const weaviateResponse = await fetch('http://localhost:8080/v1/meta');
+    const weaviateResponse = await fetch(`http://${WEAVIATE_HOST}:${WEAVIATE_PORT}/v1/meta`);
     if (weaviateResponse.ok) {
       console.log('✅ Weaviate is running');
     } else {

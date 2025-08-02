@@ -1,15 +1,18 @@
 import { MongoClient, ObjectId, Db, Filter } from "mongodb";
 import { NextRequest } from "next/server";
 import z from "zod";
-import { GoogleGenerativeAI, FunctionDeclaration, Content } from '@google/generative-ai';
+
 
 import { getDB } from "./mongo";
 import { getWeaviateSingleton } from "./weaviateSingleton";
 import { prompts } from "../../../scripts/prompt";
 import { PlayerObject, MonsterObject, classSchema, spellSchema , playerSchema, monsterSchema, fightSchema, FightObject } from "../../../scripts/dataTypes";
+import { createModelProvider, AVAILABLE_MODELS } from "./modelProviders";
 
-
-
+// Simple function to convert Zod schema to JSON schema
+function zodToJsonSchema(schema: z.ZodTypeAny) {
+  return schema._def;
+}
 
 // Utility to build MongoDB _id filter correctly
 function getIdFilter(id: string | ObjectId): Filter<Document> {
@@ -51,80 +54,7 @@ function isValidFight(fight: FightObject): boolean {
   }
 }
 
-// Convert Zod schema to Gemini function declaration
-function zodToGeminiFunction(name: string, description: string, schema: z.ZodTypeAny): FunctionDeclaration {
-  // Convert Zod schema to JSON Schema format that Gemini expects
-  function zodToJsonSchema(zodSchema: z.ZodTypeAny): any {
-    if (zodSchema instanceof z.ZodObject) {
-      const shape = zodSchema.shape;
-      const properties: Record<string, any> = {};
-      const required: string[] = [];
-      
-      for (const [key, value] of Object.entries(shape)) {
-        if (value instanceof z.ZodString) {
-          properties[key] = { type: 'STRING' };
-        } else if (value instanceof z.ZodNumber) {
-          properties[key] = { type: 'NUMBER' };
-        } else if (value instanceof z.ZodBoolean) {
-          properties[key] = { type: 'BOOLEAN' };
-        } else if (value instanceof z.ZodArray) {
-          // Handle array types more specifically
-          const arrayElement = value.element;
-          if (arrayElement instanceof z.ZodString) {
-            properties[key] = { type: 'ARRAY', items: { type: 'STRING' } };
-          } else if (arrayElement instanceof z.ZodNumber) {
-            properties[key] = { type: 'ARRAY', items: { type: 'NUMBER' } };
-          } else if (arrayElement instanceof z.ZodObject) {
-            properties[key] = { type: 'ARRAY', items: zodToJsonSchema(arrayElement) };
-          } else {
-            properties[key] = { type: 'ARRAY' };
-          }
-        } else if (value instanceof z.ZodObject) {
-          properties[key] = zodToJsonSchema(value);
-        } else if (value instanceof z.ZodOptional) {
-          // Optional fields don't go in required array
-          properties[key] = zodToJsonSchema(value.unwrap());
-        } else if (value instanceof z.ZodUnion) {
-          // Handle union types (like string | number)
-          properties[key] = { type: 'STRING' }; // Default to string for unions
-        } else if (value instanceof z.ZodLiteral) {
-          // Handle literal types
-          const literalValue = value.value;
-          if (typeof literalValue === 'string') {
-            properties[key] = { type: 'STRING' };
-          } else if (typeof literalValue === 'number') {
-            properties[key] = { type: 'NUMBER' };
-          } else if (typeof literalValue === 'boolean') {
-            properties[key] = { type: 'BOOLEAN' };
-          } else {
-            properties[key] = { type: 'STRING' };
-          }
-        } else {
-          properties[key] = { type: 'STRING' }; // Default to string
-        }
-        
-        // Add to required if not optional
-        if (!(value instanceof z.ZodOptional)) {
-          required.push(key);
-        }
-      }
-      
-      return {
-        type: 'OBJECT',
-        properties,
-        required
-      };
-    }
-    
-    return { type: 'STRING' }; // Default fallback
-  }
-  
-  return {
-    name,
-    description,
-    parameters: zodToJsonSchema(schema)
-  };
-}
+
 
 // === GET: Fetch all messages for a campaign ===
 export async function GET(req: NextRequest) {
@@ -158,13 +88,21 @@ export async function POST(req: NextRequest) {
   let mongoClient: MongoClient | undefined;
 
   try {
+    console.log("=== POST /api/chat START ===");
+    console.log("Request received at:", new Date().toISOString());
+    
     const { mongoClient: client, db } = await getDB();
     mongoClient = client;
 
     const weaviate = await getWeaviateSingleton();
+    console.log("=== WEAVIATE SINGLETON ===");
+    console.log("Weaviate singleton obtained:", !!weaviate);
 
-    const { campaignId, messages } = await req.json();
+    const { campaignId, messages, modelName, providerType = 'openrouter' } = await req.json();
+    console.log("Request parameters:", { campaignId, modelName, providerType, messageCount: messages?.length });
+    
     if (!campaignId) {
+      console.error("Missing campaignId in request");
       return new Response("Missing campaignId", { status: 400 });
     }
 
@@ -193,14 +131,53 @@ export async function POST(req: NextRequest) {
     const latestMessage = messages[messages.length - 1]?.content ?? "";
     let docContext = "";
 
+    console.log("=== ABOUT TO QUERY WEAVIATE ===");
     try {
-      const result = await weaviate.collections
-        .get("RuleContext")
-        .query.nearText([latestMessage], { limit: 10, returnMetadata: ["certainty"] });
+      console.log("=== WEAVIATE QUERY ===");
+      console.log("Querying Weaviate for:", latestMessage);
+      console.log("Weaviate client:", !!weaviate);
+      
+      // Debug: Check if weaviate is responsive
+      console.log("Weaviate client type:", typeof weaviate);
+      
+      const collection = await weaviate.collections.get("GeneralRules");
+      console.log("Collection retrieved:", !!collection);
+      
+      if (!collection) {
+        console.error("generalRules collection not found!");
+        docContext = "";
+        return;
+      }
+      
+      // Debug: Collection exists
+      console.log("Collection exists:", !!collection);
+      
+      // Use BM25 text search since collection has no vectorizer
+      console.log("Performing BM25 text search for:", latestMessage);
+      try {
+        const searchResult = await collection.query.bm25(
+          latestMessage,
+          { limit: 5 }
+        );
+        
+        console.log("Semantic search results:", {
+          count: searchResult.objects?.length || 0,
+          hasObjects: !!searchResult.objects,
+          firstObject: typeof searchResult.objects?.[0]?.properties?.text === 'string' ? searchResult.objects[0].properties.text.substring(0, 100) : "none"
+        });
 
-      docContext = JSON.stringify(result.objects.map(obj => obj.properties?.text).filter(Boolean));
+        // Extract text from semantic search results
+        const texts = searchResult.objects?.map(obj => obj.properties?.text).filter(Boolean) || [];
+        docContext = JSON.stringify(texts);
+        console.log("DocContext length:", docContext.length);
+      } catch (searchError) {
+        console.error("Semantic search failed:", searchError);
+        // Fallback to empty context
+        docContext = "";
+      }
     } catch (err) {
       console.error("Weaviate query failed:", err);
+      console.error("Error details:", err.message, err.stack);
       // Use empty context if Weaviate fails - this is expected when Ollama isn't running
       docContext = "";
     }
@@ -226,7 +203,38 @@ export async function POST(req: NextRequest) {
       ]);
     }
 
-    const prompt = prompts(gameState, docContext).dm;
+    // Determine if this is a rules query or DM session request
+    const rulesKeywords = [
+      'what are the stats', 'what are the rules', 'how does', 'what is the',
+      'stats for', 'rules for', 'monster manual', 'player handbook',
+      'd&d rules', '5e rules', 'dungeons and dragons rules',
+      'subclass', 'subclasses', 'class', 'classes', 'spell', 'spells',
+      'monster', 'monsters', 'creature', 'creatures', 'race', 'races',
+      'feat', 'feats', 'background', 'backgrounds', 'item', 'items',
+      'equipment', 'weapon', 'weapons', 'armor', 'magic item', 'magic items',
+      'ability', 'abilities', 'trait', 'traits', 'feature', 'features',
+      'school of magic', 'schools of magic', 'damage type', 'damage types',
+      'condition', 'conditions', 'skill', 'skills', 'proficiency', 'proficiencies',
+      'saving throw', 'saving throws', 'hit points', 'armor class', 'challenge rating',
+      'experience points', 'xp', 'level', 'levels', 'spell level', 'spell levels',
+      'casting time', 'range', 'components', 'duration', 'concentration',
+      'advantage', 'disadvantage', 'critical hit', 'critical hits', 'critical miss',
+      'initiative', 'movement', 'speed', 'action', 'actions', 'bonus action',
+      'reaction', 'reactions', 'free action', 'interaction', 'interactions'
+    ];
+    
+    const isRulesQuery = rulesKeywords.some(keyword => 
+      latestMessage.toLowerCase().includes(keyword.toLowerCase())
+    );
+    
+    const prompt = isRulesQuery ? 
+      prompts(gameState, docContext).rules : 
+      prompts(gameState, docContext).dm;
+    
+    console.log("=== PROMPT SELECTION ===");
+    console.log("Latest message:", latestMessage);
+    console.log("Is rules query:", isRulesQuery);
+    console.log("Selected prompt type:", isRulesQuery ? "rules" : "dm");
 
     // Define tool functions
     const tools = {
@@ -302,7 +310,7 @@ export async function POST(req: NextRequest) {
       },
     };
 
-    // Tool definitions for Gemini
+    // Tool definitions for OpenRouter
     const toolDefs = [
       {
         name: "updatePlayer",
@@ -336,7 +344,7 @@ export async function POST(req: NextRequest) {
         description: "Update a specific field for a player",
         parameters: z.object({
           id: z.string().describe("The unique identifier for the player"),
-          field: z.string().describe("The field name to update (e.g., 'hp', 'UsedMovement', 'canAct')"),
+          field: z.string().describe("The field name to update (e.g., 'currentHP', 'UsedMovement', 'canAct')"),
           value: z.any().describe("The new value for the field"),
         }),
         execute: tools.updatePlayerField,
@@ -346,7 +354,7 @@ export async function POST(req: NextRequest) {
         description: "Update a specific field for a monster",
         parameters: z.object({
           id: z.string().describe("The unique identifier for the monster"),
-          field: z.string().describe("The field name to update (e.g., 'hp', 'UsedMovement', 'canAct')"),
+          field: z.string().describe("The field name to update (e.g., 'currentHP', 'UsedMovement', 'canAct')"),
           value: z.any().describe("The new value for the field"),
         }),
         execute: tools.updateMonsterField,
@@ -373,43 +381,79 @@ export async function POST(req: NextRequest) {
       }
     ];
 
-    // Initialize Gemini
-    const apiKey = process.env.GOOGLE_API_KEY || process.env.GOOGLE_API_KEY_GEMINI || process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      throw new Error("Missing API key for Gemini. Please set GOOGLE_API_KEY, GOOGLE_API_KEY_GEMINI, GOOGLE_GENERATIVE_AI_API_KEY, or GEMINI_API_KEY");
+    // Initialize Model Provider
+    console.log("=== MODEL PROVIDER INITIALIZATION ===");
+    console.log("Provider type:", providerType);
+    console.log("Model name:", modelName);
+    
+    let modelProvider;
+    let selectedModel;
+    
+    if (providerType === 'ollama') {
+      // Use Ollama provider
+      const apiKey = undefined; // Not needed for Ollama
+      selectedModel = modelName || 'llama3.2:3b';
+      console.log("Using Ollama provider with model:", selectedModel);
+      modelProvider = createModelProvider(apiKey, 'ollama');
+    } else {
+      // Use OpenRouter provider
+      const apiKey = process.env.OPENROUTER_API_KEY;
+      console.log("OpenRouter API key found:", apiKey ? "YES" : "NO");
+      console.log("OpenRouter API key length:", apiKey?.length || 0);
+      if (!apiKey) {
+        console.error("Missing OpenRouter API key");
+        throw new Error("Missing API key for OpenRouter. Please set OPENROUTER_API_KEY");
+      }
+      
+      selectedModel = modelName || 'mistralai/mistral-7b-instruct:free';
+      console.log("Using OpenRouter provider with model:", selectedModel);
+      modelProvider = createModelProvider(apiKey, 'openrouter');
     }
     
-    const genAI = new GoogleGenerativeAI(apiKey);
-    // Use gemini-1.5-flash which has higher rate limits
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    console.log("Model provider created successfully");
+    
+    // Convert tools to the appropriate format (all models support function calling)
+    const toolDefinitions = toolDefs.map(def => ({
+      name: def.name,
+      description: def.description,
+      parameters: zodToJsonSchema(def.parameters)
+    }));
 
-    // Convert tools to Gemini function declarations
-    const geminiFunctions: FunctionDeclaration[] = toolDefs.map(def => 
-      zodToGeminiFunction(def.name, def.description, def.parameters)
-    );
-
-    const geminiTools = [{ functionDeclarations: geminiFunctions }];
-
-    // Prepare Gemini content
-    // Gemini doesn't support 'system' role, so prepend system prompt as first user message
-    let geminiMessages: Content[] = [
-      { role: "user", parts: [{ text: prompt }] },
-      ...messages.map(m => ({ role: m.role, parts: [{ text: m.content }] }))
+    // Prepare messages
+    const allMessages = [
+      { role: "system", content: prompt },
+      ...messages
     ];
 
-    // Simple chat with basic function calling
+    // Generate response using selected provider
+    console.log("=== GENERATING RESPONSE ===");
+    console.log("Model:", selectedModel);
+    console.log("Message count:", allMessages.length);
+    console.log("Tool definitions count:", toolDefinitions.length);
+    
     let response;
     try {
-      response = await model.generateContent({
-        contents: geminiMessages,
-        tools: geminiTools,
+      console.log("Calling modelProvider.generateResponse...");
+      
+      // Add timeout for Ollama to prevent hanging
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Request timeout')), 60000); // 60 second timeout
       });
       
-      const responseText = response.response.text();
-      const functionCallsInResponse = response.response.functionCalls();
+      const responsePromise = modelProvider.generateResponse(
+        allMessages,
+        toolDefinitions,
+        selectedModel
+      );
       
-      console.log(`Gemini functionCalls count: ${functionCallsInResponse?.length || 0}`);
-      console.log('Gemini response text:', responseText); // Debug log
+      response = await Promise.race([responsePromise, timeoutPromise]);
+      
+      console.log("Response received successfully");
+      const responseText = response.text;
+      const functionCallsInResponse = response.functionCalls || [];
+      
+          console.log(`OpenRouter functionCalls count: ${functionCallsInResponse?.length || 0}`);
+    console.log(`OpenRouter response text:`, responseText); // Debug log
       
       // If there are function calls, execute them and include results with the narrative
       if (functionCallsInResponse && functionCallsInResponse.length > 0) {
@@ -469,16 +513,24 @@ export async function POST(req: NextRequest) {
       });
       
     } catch (error) {
-      console.error("Gemini API error:", error);
+      console.error("=== MODEL PROVIDER ERROR ===");
+      console.error("Provider type:", providerType);
+      console.error("Model:", selectedModel);
+      console.error("Error:", error.message);
+      console.error("Error type:", error.name);
+      console.error("Error stack:", error.stack);
       
       // Try fallback without function calling
       try {
         console.log("Trying fallback without function calling...");
-        const fallbackResponse = await model.generateContent({
-          contents: geminiMessages,
-        });
+        const fallbackResponse = await modelProvider.generateResponse(
+          allMessages,
+          undefined, // no tools
+          selectedModel
+        );
         
-        const fallbackText = fallbackResponse.response.text();
+        const fallbackText = fallbackResponse.text;
+        console.log("Fallback successful, response length:", fallbackText.length);
         return new Response(JSON.stringify({ text: fallbackText }), {
           headers: {
             "Content-Type": "application/json; charset=utf-8",
@@ -486,22 +538,40 @@ export async function POST(req: NextRequest) {
           },
         });
       } catch (fallbackError) {
-        console.error("Fallback also failed:", fallbackError);
+        console.error("Fallback also failed:", fallbackError.message);
         
-        // Handle rate limiting
-        if (error.status === 429) {
-          return new Response(JSON.stringify({ 
-            text: "I'm currently experiencing high traffic. Please try again in a few moments." 
-          }), {
-            headers: {
-              "Content-Type": "application/json; charset=utf-8",
-              "Cache-Control": "no-cache",
-            },
-          });
+        // Provide more specific error messages based on the error type
+        let errorMessage = "I'm having trouble connecting to my AI service. Please try again later.";
+        
+        if (providerType === 'ollama') {
+          if (error.message.includes('timeout')) {
+            errorMessage = "The local AI model is taking too long to respond. This might be due to high system load or the model being too large for your hardware.";
+          } else if (error.message.includes('not installed')) {
+            errorMessage = "The requested AI model is not installed. Please install it first using: ollama pull " + selectedModel;
+          } else if (error.message.includes('Cannot connect')) {
+            errorMessage = "Cannot connect to the local AI service. Please ensure Ollama is running.";
+          } else if (error.message.includes('overloaded')) {
+            errorMessage = "The local AI model is currently overloaded. Please try again in a moment or use a smaller model.";
+          }
+        } else {
+          // OpenRouter specific errors
+          if (error.status === 429) {
+            errorMessage = "I'm currently experiencing high traffic. Please try again in a few moments.";
+          } else if (error.status === 401) {
+            errorMessage = "Authentication failed. Please check your API key.";
+          } else if (error.status === 503) {
+            errorMessage = "The AI service is temporarily unavailable. Please try again later.";
+          }
         }
         
         return new Response(JSON.stringify({ 
-          text: "I'm having trouble connecting to my AI service. Please try again later." 
+          text: errorMessage,
+          error: {
+            type: error.name,
+            message: error.message,
+            provider: providerType,
+            model: selectedModel
+          }
         }), {
           headers: {
             "Content-Type": "application/json; charset=utf-8",

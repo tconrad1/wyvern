@@ -76,16 +76,26 @@ const Home = () => {
     setInput("");
 
     try {
+      // Get model and provider from settings
+      const model = localStorage.getItem('model') || '';
+      const providerType = localStorage.getItem('providerType') || 'ollama';
+      
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           messages: updatedMessages,
           campaignId,
+          modelName: model || undefined,
+          providerType: providerType as 'ollama' | 'openrouter',
         }),
       });
 
-      if (!response.ok) throw new Error("Failed to fetch response");
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("API Error:", response.status, errorText);
+        throw new Error(`Failed to fetch response: ${response.status} - ${errorText}`);
+      }
 
       const reader = response.body?.getReader();
       if (!reader) {
@@ -164,12 +174,14 @@ const Home = () => {
         content: extractPlainTextFromResponse(assistantMessageContent),
         timestamp: new Date().toISOString(),
       };
+      const savedProviderType = localStorage.getItem('providerType') || 'ollama';
       await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           campaignId,
           messages: [assistantMsg],
+          providerType: savedProviderType as 'ollama' | 'openrouter',
         }),
       });
     } catch (err) {

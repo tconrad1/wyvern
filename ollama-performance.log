@@ -1,0 +1,96 @@
+[2025-07-31T12:48:57.588Z] 🧪 Running quick test...
+[2025-07-31T12:49:07.698Z] ✅ llama3.2:3b: SUCCESS (10061ms) - Tool calls: undefined, Response length: 0
+[2025-07-31T12:49:11.145Z] ❌ phi3:mini: FAILED (440ms) - HTTP 400: {"error":"registry.ollama.ai/library/phi3:mini does not support tools"}
+[2025-07-31T12:49:34.994Z] ✅ mistral:7b: SUCCESS (20845ms) - Tool calls: undefined, Response length: 0
+[2025-07-31T12:49:37.997Z] 
+📊 CURRENT STATISTICS
+[2025-07-31T12:49:37.997Z] =====================
+[2025-07-31T12:49:37.998Z] Total Requests: 3
+[2025-07-31T12:49:37.998Z] Successful: 2
+[2025-07-31T12:49:37.999Z] Failed: 1
+[2025-07-31T12:49:38.000Z] Success Rate: 66.7%
+[2025-07-31T12:49:38.000Z] 
+Error Types:
+[2025-07-31T12:49:38.001Z]   Error: 1
+[2025-07-31T12:49:38.001Z] 
+Model Performance:
+[2025-07-31T12:49:38.001Z]   llama3.2:3b: 1/1 (100.0%) - Avg: 10061ms
+[2025-07-31T12:49:38.002Z]   phi3:mini: 0/1 (0.0%) - Avg: 0ms
+[2025-07-31T12:49:38.002Z]   mistral:7b: 1/1 (100.0%) - Avg: 20845ms
+[2025-07-31T12:49:38.003Z] 
+💡 RECOMMENDATIONS
+[2025-07-31T12:49:38.003Z] ==================
+[2025-07-31T12:49:38.003Z] ❌ Models with issues:
+[2025-07-31T12:49:38.004Z]   - phi3:mini: HTTP 400: {"error":"registry.ollama.ai/library/phi3:mini does not support tools"}
+[2025-07-31T12:49:38.004Z] ✅ Recommended models:
+[2025-07-31T12:49:38.004Z]   - llama3.2:3b: 10061ms
+[2025-07-31T12:49:38.005Z]   - mistral:7b: 20845ms
+[2025-07-31T12:54:31.287Z] 🧪 Running quick test...
+[2025-07-31T12:54:41.211Z] ✅ llama3.2:3b: SUCCESS (9907ms) - Tool calls: undefined, Response length: 0
+[2025-07-31T12:55:06.760Z] ✅ mistral:7b: SUCCESS (22544ms) - Tool calls: undefined, Response length: 0
+[2025-07-31T12:55:31.948Z] ✅ qwen2.5:7b: SUCCESS (22175ms) - Tool calls: undefined, Response length: 0
+[2025-07-31T12:55:34.962Z] 
+📊 CURRENT STATISTICS
+[2025-07-31T12:55:34.963Z] =====================
+[2025-07-31T12:55:34.963Z] Total Requests: 3
+[2025-07-31T12:55:34.963Z] Successful: 3
+[2025-07-31T12:55:34.964Z] Failed: 0
+[2025-07-31T12:55:34.964Z] Success Rate: 100.0%
+[2025-07-31T12:55:34.964Z] 
+Model Performance:
+[2025-07-31T12:55:34.965Z]   llama3.2:3b: 1/1 (100.0%) - Avg: 9907ms
+[2025-07-31T12:55:34.965Z]   mistral:7b: 1/1 (100.0%) - Avg: 22544ms
+[2025-07-31T12:55:34.966Z]   qwen2.5:7b: 1/1 (100.0%) - Avg: 22175ms
+[2025-07-31T12:55:34.966Z] 
+💡 RECOMMENDATIONS
+[2025-07-31T12:55:34.966Z] ==================
+[2025-07-31T12:55:34.967Z] ✅ Recommended models:
+[2025-07-31T12:55:34.967Z]   - llama3.2:3b: 9907ms
+[2025-07-31T12:55:34.967Z]   - mistral:7b: 22544ms
+[2025-07-31T12:55:34.968Z]   - qwen2.5:7b: 22175ms
+[2025-07-31T13:54:04.464Z] 🧪 Running quick test...
+[2025-07-31T13:54:15.383Z] ✅ llama3.2:3b: SUCCESS (10899ms) - Tool calls: undefined, Response length: 0
+[2025-07-31T13:54:37.476Z] ✅ mistral:7b: SUCCESS (19091ms) - Tool calls: undefined, Response length: 0
+[2025-07-31T13:55:03.351Z] ✅ qwen2.5:7b: SUCCESS (22868ms) - Tool calls: undefined, Response length: 0
+[2025-07-31T13:55:06.363Z] 
+📊 CURRENT STATISTICS
+[2025-07-31T13:55:06.363Z] =====================
+[2025-07-31T13:55:06.364Z] Total Requests: 3
+[2025-07-31T13:55:06.364Z] Successful: 3
+[2025-07-31T13:55:06.364Z] Failed: 0
+[2025-07-31T13:55:06.365Z] Success Rate: 100.0%
+[2025-07-31T13:55:06.365Z] 
+Model Performance:
+[2025-07-31T13:55:06.365Z]   llama3.2:3b: 1/1 (100.0%) - Avg: 10899ms
+[2025-07-31T13:55:06.366Z]   mistral:7b: 1/1 (100.0%) - Avg: 19091ms
+[2025-07-31T13:55:06.366Z]   qwen2.5:7b: 1/1 (100.0%) - Avg: 22868ms
+[2025-07-31T13:55:06.366Z] 
+💡 RECOMMENDATIONS
+[2025-07-31T13:55:06.367Z] ==================
+[2025-07-31T13:55:06.367Z] ✅ Recommended models:
+[2025-07-31T13:55:06.367Z]   - llama3.2:3b: 10899ms
+[2025-07-31T13:55:06.367Z]   - mistral:7b: 19091ms
+[2025-07-31T13:55:06.368Z]   - qwen2.5:7b: 22868ms
+[2025-07-31T13:55:06.505Z] 🧪 Running quick test...
+[2025-07-31T13:55:17.557Z] ✅ llama3.2:3b: SUCCESS (11048ms) - Tool calls: undefined, Response length: 0
+[2025-07-31T13:55:39.476Z] ✅ mistral:7b: SUCCESS (18914ms) - Tool calls: undefined, Response length: 0
+[2025-07-31T13:56:04.774Z] ✅ qwen2.5:7b: SUCCESS (22292ms) - Tool calls: undefined, Response length: 0
+[2025-07-31T13:56:07.785Z] 
+📊 CURRENT STATISTICS
+[2025-07-31T13:56:07.786Z] =====================
+[2025-07-31T13:56:07.786Z] Total Requests: 3
+[2025-07-31T13:56:07.786Z] Successful: 3
+[2025-07-31T13:56:07.787Z] Failed: 0
+[2025-07-31T13:56:07.787Z] Success Rate: 100.0%
+[2025-07-31T13:56:07.787Z] 
+Model Performance:
+[2025-07-31T13:56:07.788Z]   llama3.2:3b: 1/1 (100.0%) - Avg: 11048ms
+[2025-07-31T13:56:07.788Z]   mistral:7b: 1/1 (100.0%) - Avg: 18914ms
+[2025-07-31T13:56:07.788Z]   qwen2.5:7b: 1/1 (100.0%) - Avg: 22292ms
+[2025-07-31T13:56:07.789Z] 
+💡 RECOMMENDATIONS
+[2025-07-31T13:56:07.789Z] ==================
+[2025-07-31T13:56:07.789Z] ✅ Recommended models:
+[2025-07-31T13:56:07.789Z]   - llama3.2:3b: 11048ms
+[2025-07-31T13:56:07.790Z]   - mistral:7b: 18914ms
+[2025-07-31T13:56:07.790Z]   - qwen2.5:7b: 22292ms

@@ -5,13 +5,14 @@ import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
 
 // Config and paths
 const WEAVIATE_HOST = process.env.WEAVIATE_HOST || "localhost:8080";
-const OLLAMA_ENDPOINT = process.env.OLLAMA_ENDPOINT;;
-const CLASS_NAME = "Document";  // Must match your schema class
-const DATA_DIR = "C:/local_projects/wyvern/data"; // Your data folder
+const OLLAMA_ENDPOINT = process.env.OLLAMA_ENDPOINT || `http://${process.env.OLLAMA_HOST || 'localhost'}:11434`;
+const DATA_DIR = process.env.DATA_DIR || "/app/data"; // Your data folder
 
 // Initialize client
-const client: WeaviateClient = await weaviate.connectToLocal();
-
+const client: WeaviateClient = await weaviate.connectToLocal({
+  host: WEAVIATE_HOST.split(':')[0],
+  port: parseInt(WEAVIATE_HOST.split(':')[1] || '8080')
+});
 
 function chunkArray<T>(arr: T[], size: number): T[][] {
   const chunks: T[][] = [];
@@ -20,19 +21,6 @@ function chunkArray<T>(arr: T[], size: number): T[][] {
   }
   return chunks;
 }
-
-// await client.collections.create({
-//   name: 'Document',
-//   vectorizers: vectorizer.text2VecOllama({
-//     apiEndpoint: OLLAMA_ENDPOINT, // This must match your running Ollama instance
-//     model: 'nomic-embed-text'             // Use a model you’ve pulled with `ollama run`
-//   }),
-//   generative: generative.ollama({
-//     apiEndpoint: OLLAMA_ENDPOINT,
-//     model: 'mistral' // default model
-//   })
-// });
-
 
 // Utility to get all files recursively
 function getAllFiles(dirPath: string, arrayOfFiles: string[] = []): string[] {
@@ -50,43 +38,57 @@ function getAllFiles(dirPath: string, arrayOfFiles: string[] = []): string[] {
 
 // Main loader function
 async function loadData() {
-  const schema = await client.collections.get(CLASS_NAME);
-  console.log(JSON.stringify(schema, null, 2));
+  console.log("Starting data loading process...");
+  console.log("💡 Note: This is an alternative to 'npm run load:general-rules' which loads complete JSON files");
   
-  if (!schema) {
-    console.error(`Collection ${CLASS_NAME} does not exist. Please create it first.`);
+  // Check if generalRules collection exists
+  try {
+    const collection = await client.collections.get("generalRules");
+    console.log("Found generalRules collection");
+  } catch (error) {
+    console.error("generalRules collection does not exist. Please create it first.");
     return;
   }
   
   const files = getAllFiles(DATA_DIR);
+  console.log(`Found ${files.length} JSON files to process`);
+  
   const splitter = new RecursiveCharacterTextSplitter({
     chunkSize: 512,
     chunkOverlap: 100,
   });
 
- const collection = await client.collections.get("RuleContext");
+  const collection = await client.collections.get("generalRules");
+  let totalInserted = 0;
 
-for (const file of files) {
-  console.log(`Reading file: ${file}`);
-  const rawContent = fs.readFileSync(file, "utf8");
-  const chunks = await splitter.splitText(rawContent);
+  for (const file of files) {
+    console.log(`Reading file: ${file}`);
+    try {
+      const rawContent = fs.readFileSync(file, "utf8");
+      const chunks = await splitter.splitText(rawContent);
+      console.log(`  Split into ${chunks.length} chunks`);
 
-  // Prepare objects for batch insert
-  const objects = chunks.map(chunk => ({
-    properties: {
-      text: chunk,
-    },
-  }));
+      // Prepare objects for batch insert
+      const objects = chunks.map(chunk => ({
+        properties: {
+          text: chunk,
+          source: path.basename(file),
+          category: path.dirname(file).split(path.sep).pop() || 'root'
+        },
+      }));
 
-  try {
-    for (const batch of chunkArray(objects, 100)) {
-  await collection.data.insertMany(batch);
-}
-
-  } catch (e) {
-    console.error(`Error inserting chunks from ${file}:`, e);
+      // Insert in batches
+      for (const batch of chunkArray(objects, 100)) {
+        await collection.data.insertMany(batch);
+        totalInserted += batch.length;
+        console.log(`  Inserted batch of ${batch.length} objects (total: ${totalInserted})`);
+      }
+    } catch (e) {
+      console.error(`Error processing file ${file}:`, e);
+    }
   }
-}
+  
+  console.log(`Data loading complete. Total objects inserted: ${totalInserted}`);
 }
 
 loadData().catch(console.error);
