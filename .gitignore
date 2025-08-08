@@ -56,3 +56,5 @@ scripts/prompt.ts
 colors.txt
 .cursorrules
 .cursorignore
+models/Qwen2-7B-q5-1.gguf
+models/Qwen2-7B.gguf

@@ -1,6 +1,11 @@
 FROM node:18
 
+
 WORKDIR /app
+# COPY Qwen2-7B-q5-1.gguf /models/Qwen2-7B-q5-1.gguf
+COPY qwen2-7b.gguf /models/qwen2-7b.gguf
+COPY ModelFile /app/ModelFile
+COPY run_ollama.sh /app/run_ollama.sh 
 
 COPY package*.json ./
 RUN npm install
